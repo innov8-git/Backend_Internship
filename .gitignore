@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+logs/
+.env
+.env.local
+.env.production
+*.log
+public/uploads/*
+!public/uploads/.gitkeep
+.DS_Store
+Thumbs.db
+
