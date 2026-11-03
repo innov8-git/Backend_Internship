@@ -1,0 +1,625 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum Role {
+  STUDENT
+  TRAINER
+  ADMIN
+}
+
+enum AuthTokenType {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ScheduleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  SUSPENDED
+}
+
+enum EnrollmentType {
+  INDIVIDUAL
+  TEAM
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCESS
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum TaskStatus {
+  LOCKED
+  AVAILABLE
+  IN_PROGRESS
+  SUBMITTED
+  CHANGES_REQUESTED
+  APPROVED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum ReviewDecision {
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum TeamStatus {
+  FORMING
+  READY
+  ACTIVE
+  DISBANDED
+}
+
+enum MemberStatus {
+  INVITED
+  JOINED
+  DECLINED
+  REMOVED
+}
+
+enum CertificateStatus {
+  ISSUED
+  REVOKED
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id            String     @id @default(uuid())
+  name          String
+  email         String     @unique
+  passwordHash  String
+  roles         Role[]     @default([STUDENT])
+  status        UserStatus @default(PENDING_VERIFICATION)
+  emailVerified Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  authTokens         AuthToken[]
+  assessmentAttempts AssessmentAttempt[]
+  quotes             Quote[]
+  termsAcceptances   TermsAcceptance[]
+  enrollments        Enrollment[]
+  payments           Payment[]
+  teamsLed           Team[]              @relation("TeamLeader")
+  teamMemberships    TeamMember[]
+  githubConnection   GithubConnection?
+  certificates       Certificate[]
+  trainerAssignments TrainerAssignment[] @relation("Trainer")
+  auditLogs          AuditLog[]
+  sopAccessLogs      SopAccessLog[]
+  taskSubmissions    TaskSubmission[]    @relation("Submitter")
+  reviews            Review[]            @relation("Reviewer")
+
+  @@map("users")
+}
+
+model AuthToken {
+  id        String        @id @default(uuid())
+  userId    String
+  type      AuthTokenType
+  token     String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type, token])
+  @@map("auth_tokens")
+}
+
+model Designation {
+  id          String        @id @default(uuid())
+  name        String
+  slug        String        @unique
+  description String        @default("")
+  status      PublishStatus @default(DRAFT)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  internshipPlans   InternshipPlan[]
+  assessmentConfigs AssessmentConfig[]
+  scheduleTemplates ScheduleTemplate[]
+
+  @@map("designations")
+}
+
+model Domain {
+  id          String        @id @default(uuid())
+  name        String
+  slug        String        @unique
+  description String        @default("")
+  status      PublishStatus @default(DRAFT)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  internshipPlans   InternshipPlan[]
+  scheduleTemplates ScheduleTemplate[]
+
+  @@map("domains")
+}
+
+model InternshipPlan {
+  id             String        @id @default(uuid())
+  designationId  String
+  domainId       String
+  durationMonths Int
+  basePrice      Int // integer paise
+  currency       String        @default("INR")
+  status         PublishStatus @default(DRAFT)
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  designation Designation @relation(fields: [designationId], references: [id])
+  domain      Domain      @relation(fields: [domainId], references: [id])
+  enrollments Enrollment[]
+  teams       Team[]
+  quotes      Quote[]
+
+  @@unique([designationId, domainId, durationMonths])
+  @@index([designationId])
+  @@index([domainId])
+  @@map("internship_plans")
+}
+
+model AssessmentConfig {
+  id            String         @id @default(uuid())
+  designationId String
+  version       Int
+  status        ScheduleStatus @default(DRAFT)
+  questions     Json           @default("[]")
+  discountSlabs Json           @default("[]")
+  createdBy     String?
+  publishedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  designation Designation @relation(fields: [designationId], references: [id])
+
+  @@index([designationId])
+  @@map("assessment_configs")
+}
+
+model AssessmentAttempt {
+  id              String   @id @default(uuid())
+  userId          String
+  designationId   String
+  configVersion   Int
+  score           Int
+  totalQuestions  Int
+  discountPercent Float    @default(0)
+  submittedAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, designationId])
+  @@index([userId])
+  @@map("assessment_attempts")
+}
+
+model Quote {
+  id              String         @id @default(uuid())
+  userId          String
+  planId          String
+  enrollmentType  EnrollmentType @default(INDIVIDUAL)
+  teamId          String?
+  attemptId       String?
+  score           Int?
+  basePrice       Int
+  discountPercent Float          @default(0)
+  payableAmount   Int
+  currency        String         @default("INR")
+  expiresAt       DateTime
+  createdAt       DateTime       @default(now())
+
+  user        User           @relation(fields: [userId], references: [id])
+  plan        InternshipPlan @relation(fields: [planId], references: [id])
+  team        Team?          @relation(fields: [teamId], references: [id])
+  enrollments Enrollment[]
+
+  @@index([userId])
+  @@map("quotes")
+}
+
+model TermsVersion {
+  id          String   @id @default(uuid())
+  version     Int      @unique
+  content     String
+  publishedAt DateTime @default(now())
+
+  acceptances TermsAcceptance[]
+
+  @@map("terms_versions")
+}
+
+model TermsAcceptance {
+  id           String   @id @default(uuid())
+  userId       String
+  enrollmentId String
+  termsVersion Int
+  acceptedAt   DateTime @default(now())
+
+  user       User         @relation(fields: [userId], references: [id])
+  enrollment Enrollment   @relation(fields: [enrollmentId], references: [id])
+  terms      TermsVersion @relation(fields: [termsVersion], references: [version])
+
+  @@index([enrollmentId])
+  @@map("terms_acceptances")
+}
+
+model Enrollment {
+  id                   String           @id @default(uuid())
+  userId               String
+  teamId               String?
+  planId               String
+  quoteId              String?
+  enrollmentType       EnrollmentType   @default(INDIVIDUAL)
+  scheduleTemplateId   String?
+  scheduleVersion      Int?
+  priceSnapshot        Json?
+  status               EnrollmentStatus @default(PENDING_PAYMENT)
+  paymentStatus        PaymentStatus?
+  termsAcceptedVersion Int?
+  progress             Json?
+  certificateId        String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  activatedAt          DateTime?
+  completedAt          DateTime?
+
+  user               User              @relation(fields: [userId], references: [id])
+  team               Team?             @relation(fields: [teamId], references: [id])
+  plan               InternshipPlan    @relation(fields: [planId], references: [id])
+  quote              Quote?            @relation(fields: [quoteId], references: [id])
+  scheduleTemplate   ScheduleTemplate? @relation(fields: [scheduleTemplateId], references: [id])
+  payments           Payment[]
+  taskProgress       TaskProgress[]
+  termsAcceptances   TermsAcceptance[]
+  trainerAssignments TrainerAssignment[]
+  sopAccessLogs      SopAccessLog[]
+  certificate        Certificate?      @relation("EnrollmentCertificate")
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([planId])
+  @@map("enrollments")
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  enrollmentId     String
+  userId           String
+  orderId          String        @unique
+  provider         String        @default("mock")
+  amount           Int
+  currency         String        @default("INR")
+  status           PaymentStatus @default(CREATED)
+  gatewayReference String?
+  flagged          Boolean       @default(false)
+  flagReason       String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  enrollment Enrollment     @relation(fields: [enrollmentId], references: [id])
+  user       User           @relation(fields: [userId], references: [id])
+  events     PaymentEvent[]
+
+  @@index([enrollmentId])
+  @@index([userId])
+  @@map("payments")
+}
+
+model PaymentEvent {
+  id          String   @id @default(uuid())
+  paymentId   String
+  eventId     String?
+  type        String
+  processedAt DateTime @default(now())
+  note        String?
+  payload     Json?
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId])
+  @@map("payment_events")
+}
+
+model ScheduleTemplate {
+  id             String         @id @default(uuid())
+  designationId  String
+  domainId       String
+  durationMonths Int
+  version        Int
+  status         ScheduleStatus @default(DRAFT)
+  days           Json           @default("[]")
+  createdBy      String?
+  publishedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  designation     Designation      @relation(fields: [designationId], references: [id])
+  domain          Domain           @relation(fields: [domainId], references: [id])
+  taskDefinitions TaskDefinition[]
+  enrollments     Enrollment[]
+
+  @@index([designationId, domainId, durationMonths])
+  @@map("schedule_templates")
+}
+
+model TaskDefinition {
+  id                    String   @id @default(uuid())
+  templateId            String
+  templateVersion       Int?
+  sequence              Int
+  dayNumber             Int?
+  title                 String
+  problemStatement      String   @default("")
+  expectedOutcome       String   @default("")
+  acceptanceCriteria    Json     @default("[]")
+  starterRepoUrl        String?
+  estimatedHours        Float?
+  requiresTrainerReview Boolean  @default(true)
+  prerequisiteTaskIds   Json     @default("[]")
+  createdBy             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  template     ScheduleTemplate @relation(fields: [templateId], references: [id])
+  taskProgress TaskProgress[]
+
+  @@index([templateId])
+  @@map("task_definitions")
+}
+
+model TaskProgress {
+  id               String        @id @default(uuid())
+  enrollmentId     String
+  teamId           String?
+  taskId           String
+  status           TaskStatus    @default(LOCKED)
+  startedAt        DateTime?
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  attempts         Int           @default(0)
+  lastReviewStatus ReviewStatus?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  enrollment  Enrollment       @relation(fields: [enrollmentId], references: [id])
+  task        TaskDefinition   @relation(fields: [taskId], references: [id])
+  submissions TaskSubmission[]
+
+  @@index([enrollmentId])
+  @@index([teamId])
+  @@index([taskId])
+  @@map("task_progress")
+}
+
+model TaskSubmission {
+  id             String       @id @default(uuid())
+  taskProgressId String
+  enrollmentId   String?
+  attemptNumber  Int
+  description    String
+  githubUrl      String
+  screenshots    Json         @default("[]")
+  submittedById  String
+  reviewStatus   ReviewStatus @default(PENDING)
+  submittedAt    DateTime     @default(now())
+
+  taskProgress TaskProgress @relation(fields: [taskProgressId], references: [id])
+  submittedBy  User         @relation("Submitter", fields: [submittedById], references: [id])
+  review       Review?
+
+  @@index([taskProgressId])
+  @@map("task_submissions")
+}
+
+model Review {
+  id           String         @id @default(uuid())
+  submissionId String         @unique
+  trainerId    String
+  decision     ReviewDecision
+  feedback     String         @default("")
+  reviewedAt   DateTime       @default(now())
+
+  submission TaskSubmission @relation(fields: [submissionId], references: [id])
+  trainer    User           @relation("Reviewer", fields: [trainerId], references: [id])
+
+  @@map("reviews")
+}
+
+model TrainerAssignment {
+  id           String    @id @default(uuid())
+  trainerId    String
+  enrollmentId String?
+  teamId       String?
+  active       Boolean   @default(true)
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+
+  trainer    User        @relation("Trainer", fields: [trainerId], references: [id])
+  enrollment Enrollment? @relation(fields: [enrollmentId], references: [id])
+  team       Team?       @relation(fields: [teamId], references: [id])
+
+  @@index([trainerId])
+  @@index([enrollmentId])
+  @@index([teamId])
+  @@map("trainer_assignments")
+}
+
+model Team {
+  id        String     @id @default(uuid())
+  name      String
+  leaderId  String
+  planId    String
+  repoUrl   String?
+  status    TeamStatus @default(FORMING)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  leader             User                @relation("TeamLeader", fields: [leaderId], references: [id])
+  plan               InternshipPlan      @relation(fields: [planId], references: [id])
+  members            TeamMember[]
+  enrollments        Enrollment[]
+  quotes             Quote[]
+  trainerAssignments TrainerAssignment[]
+
+  @@index([leaderId])
+  @@index([planId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id              String       @id @default(uuid())
+  teamId          String
+  userId          String?
+  email           String
+  name            String?
+  status          MemberStatus @default(INVITED)
+  isLeader        Boolean      @default(false)
+  inviteToken     String?      @unique
+  invitedAt       DateTime     @default(now())
+  joinedAt        DateTime?
+  inviteExpiresAt DateTime?
+
+  team Team  @relation(fields: [teamId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([teamId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+model GithubConnection {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  githubUsername String
+  scopes        Json     @default("[]")
+  connectedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("github_connections")
+}
+
+model Certificate {
+  id            String            @id @default(uuid())
+  certificateNo String            @unique
+  userId        String
+  enrollmentId  String            @unique
+  status        CertificateStatus @default(ISSUED)
+  issuedAt      DateTime          @default(now())
+  emailStatus   EmailStatus       @default(PENDING)
+  revokedAt     DateTime?
+  revokeReason  String?
+
+  user       User       @relation(fields: [userId], references: [id])
+  enrollment Enrollment @relation("EnrollmentCertificate", fields: [enrollmentId], references: [id])
+
+  @@index([userId])
+  @@map("certificates")
+}
+
+model EmailJob {
+  id        String      @id @default(uuid())
+  to        String
+  template  String
+  subject   String
+  link      String?
+  payload   Json?
+  status    EmailStatus @default(PENDING)
+  sentAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  @@map("email_jobs")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  action     String
+  entityType String?
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SopAccessLog {
+  id           String   @id @default(uuid())
+  userId       String
+  enrollmentId String
+  dayNumber    Int
+  ip           String?
+  accessedAt   DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id])
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+
+  @@index([userId])
+  @@index([enrollmentId])
+  @@map("sop_access_logs")
+}
