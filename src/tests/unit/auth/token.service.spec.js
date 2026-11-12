@@ -39,3 +39,4 @@ describe('Unit: Token Utility (src/utils/token.util.js)', () => {
     expect(hash1.length).toBe(64); // SHA-256 = 64 hex chars
   });
 });
+

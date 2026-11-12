@@ -28,3 +28,4 @@ describe('Unit: Hash Utility (src/utils/hash.util.js)', () => {
     expect(isMatch).toBe(false);
   });
 });
+

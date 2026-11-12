@@ -22,3 +22,4 @@ router.post('/assign-role', requirePermission('rbac:manage'), rbacController.ass
 router.post('/remove-role', requirePermission('rbac:manage'), rbacController.removeRole);
 
 module.exports = router;
+
