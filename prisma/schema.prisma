@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -15,10 +16,16 @@ enum UserStatus {
   SUSPENDED
 }
 
-enum Role {
+enum RoleName {
   STUDENT
   TRAINER
   ADMIN
+}
+
+enum TokenType {
+  REFRESH
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
 }
 
 enum AuthTokenType {
@@ -114,7 +121,8 @@ model User {
   name          String
   email         String     @unique
   passwordHash  String
-  roles         Role[]     @default([STUDENT])
+  userRoles      UserRole[]
+  trainerProfile TrainerProfile?
   status        UserStatus @default(PENDING_VERIFICATION)
   emailVerified Boolean    @default(false)
   createdAt     DateTime   @default(now())
@@ -131,6 +139,7 @@ model User {
   githubConnection   GithubConnection?
   certificates       Certificate[]
   trainerAssignments TrainerAssignment[] @relation("Trainer")
+  tokens             Token[]
   auditLogs          AuditLog[]
   sopAccessLogs      SopAccessLog[]
   taskSubmissions    TaskSubmission[]    @relation("Submitter")
@@ -622,4 +631,107 @@ model SopAccessLog {
   @@index([userId])
   @@index([enrollmentId])
   @@map("sop_access_logs")
+}
+
+// --- RBAC: Normalized Role / Permission tables --------------------------------
+
+model RoleModel {
+  id          String   @id @default(uuid())
+  name        RoleName @unique
+  displayName String
+  description String?
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  module      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role RoleModel @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  assignedAt   DateTime @default(now())
+
+  role       RoleModel  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// --- Trainer extended profile -------------------------------------------------
+
+model TrainerProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  domain       String
+  experience   String
+  linkedinUrl  String?
+  organization String?
+  resumeUrl    String?
+  bio          String?
+  isApproved   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("trainer_profiles")
+}
+
+// --- Token (refresh + email verify + password reset) -------------------------
+
+model Token {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  type      TokenType
+  family    String?
+  revoked   Boolean   @default(false)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+  userAgent String?
+  ipAddress String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([type, revoked])
+  @@map("tokens")
 }

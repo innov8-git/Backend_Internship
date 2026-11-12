@@ -1,8 +1,10 @@
+'use strict';
+
 const rateLimit = require('express-rate-limit');
 const config = require('./index');
 
 /**
- * Global rate limiter — applied to all routes.
+ * Global rate limiter — applied to all API routes.
  */
 function createGlobalLimiter() {
   return rateLimit({
@@ -22,7 +24,35 @@ function createGlobalLimiter() {
 }
 
 /**
- * Strict limiter for login/auth endpoints — 5 attempts per minute per IP.
+ * Strict limiter for Auth endpoints (login, register, forgot-password)
+ * Defaults to 10 requests per 15 minutes per IP.
+ */
+function createAuthLimiter() {
+  const windowMs = parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS || '900000', 10);
+  const max = parseInt(process.env.AUTH_RATE_LIMIT_MAX || '10', 10);
+
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      const email = req.body?.email || '';
+      return `${req.ip}:${email}`;
+    },
+    message: {
+      success: false,
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Too many attempts. Please wait 15 minutes and try again.',
+        details: [],
+      },
+    },
+  });
+}
+
+/**
+ * Strict limiter for login attempts (1 minute window).
  */
 function createLoginLimiter() {
   return rateLimit({
@@ -31,7 +61,6 @@ function createLoginLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      // Rate-limit by IP + email combo when possible
       const email = req.body?.email || '';
       return `${req.ip}:${email}`;
     },
@@ -39,11 +68,15 @@ function createLoginLimiter() {
       success: false,
       error: {
         code: 'RATE_LIMITED',
-        message: 'Too many attempts. Please wait a minute and try again.',
+        message: 'Too many login attempts. Please wait a minute and try again.',
         details: [],
       },
     },
   });
 }
 
-module.exports = { createGlobalLimiter, createLoginLimiter };
+module.exports = {
+  createGlobalLimiter,
+  createAuthLimiter,
+  createLoginLimiter,
+};
