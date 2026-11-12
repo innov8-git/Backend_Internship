@@ -1,7 +1,14 @@
-const { authenticate, authorize, optionalAuth } = require('./jwt-auth.guard');
+'use strict';
+
+const { authenticate, optionalAuth } = require('./auth.guard');
+const { requireRole, authorize } = require('./roles.guard');
+const { requirePermission, requirePermissions } = require('./permissions.guard');
 
 module.exports = {
   authenticate,
-  authorize,
   optionalAuth,
+  requireRole,
+  authorize,
+  requirePermission,
+  requirePermissions,
 };
