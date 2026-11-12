@@ -148,3 +148,4 @@ function getOtpEmailTemplate({ otp, purpose, name = 'there' }) {
 module.exports = {
   getOtpEmailTemplate,
 };
+
