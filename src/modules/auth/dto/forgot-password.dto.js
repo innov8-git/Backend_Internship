@@ -11,3 +11,4 @@ const forgotPasswordSchema = Joi.object({
 });
 
 module.exports = { forgotPasswordSchema };
+

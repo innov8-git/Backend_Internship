@@ -7,3 +7,4 @@ const refreshTokenSchema = Joi.object({
 });
 
 module.exports = { refreshTokenSchema };
+

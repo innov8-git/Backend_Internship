@@ -23,3 +23,4 @@ const resetPasswordSchema = Joi.object({
 });
 
 module.exports = { resetPasswordSchema };
+
