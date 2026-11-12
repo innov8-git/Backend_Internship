@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const config = require('../../config');
 const logger = require('../logger');
 const { prisma } = require('../../database');
+const { getOtpEmailTemplate } = require('./templates/otp.template');
 
 let transporter = null;
 
@@ -78,6 +79,25 @@ async function sendEmail({ to, subject, html, template = 'generic', link = null,
 }
 
 /**
+ * Send an OTP code email.
+ * @param {object} options
+ * @param {string} options.to - Recipient email
+ * @param {string} options.otp - 6-digit numeric OTP
+ * @param {string} options.purpose - OTP Purpose ('REGISTRATION_VERIFY', 'LOGIN', 'PASSWORD_RESET')
+ * @param {string} [options.name] - User's name
+ */
+async function sendOtpEmail({ to, otp, purpose, name = 'there' }) {
+  const { subject, html } = getOtpEmailTemplate({ otp, purpose, name });
+  return sendEmail({
+    to,
+    subject,
+    html,
+    template: `otp-${purpose.toLowerCase()}`,
+    payload: { otp: '******', purpose },
+  });
+}
+
+/**
  * Send a verification email.
  */
 async function sendVerificationEmail(email, name, token) {
@@ -122,6 +142,7 @@ async function sendPasswordResetEmail(email, name, token) {
 
 module.exports = {
   sendEmail,
+  sendOtpEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
   getTransporter,

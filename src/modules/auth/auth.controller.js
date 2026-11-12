@@ -1,352 +1,206 @@
-const { prisma } = require('../../database');
+'use strict';
+
+const authService = require('./services/auth.service');
+const otpService = require('./services/otp.service');
 const {
-  ApiError,
   asyncHandler,
-  toDto,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+  REFRESH_TOKEN_COOKIE_NAME,
   ok,
   created,
-  noContent,
-  message,
-  hashPassword,
-  comparePassword,
-  signAccessToken,
-  signRefreshToken,
-  verifyRefreshToken,
-  generateRandomToken,
-  setRefreshCookie,
-  clearRefreshCookie,
+  ApiError,
 } = require('../../utils');
-const { USER_STATUS, ROLES } = require('../../common/constants');
-const { sendVerificationEmail, sendPasswordResetEmail } = require('../../libs/email');
-const logger = require('../../libs/logger');
 
 /**
- * User DTO — strips passwordHash and maps id → _id.
+ * Authentication Controller
+ * Delegates business logic to AuthService and OtpService, formatting HTTP responses.
  */
-function userDto(user) {
-  if (!user) return null;
-  return {
-    _id: user.id,
-    name: user.name,
-    email: user.email,
-    roles: user.roles,
-    status: user.status,
-    emailVerified: user.emailVerified,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
-  };
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-async function createVerificationToken(userId) {
-  const token = generateRandomToken();
-  await prisma.authToken.create({
-    data: {
-      userId,
-      type: 'EMAIL_VERIFY',
-      token,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
-    },
-  });
-  return token;
-}
-
-async function createPasswordResetToken(userId) {
-  const token = generateRandomToken();
-  // Invalidate old reset tokens
-  await prisma.authToken.updateMany({
-    where: { userId, type: 'PASSWORD_RESET', usedAt: null },
-    data: { usedAt: new Date() },
-  });
-  await prisma.authToken.create({
-    data: {
-      userId,
-      type: 'PASSWORD_RESET',
-      token,
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-    },
-  });
-  return token;
-}
-
-// ─── Controllers ─────────────────────────────────────────────────────────────
 
 /**
- * POST /auth/register
+ * POST /api/v1/auth/register
  */
 const register = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
-
-  // Validate
-  const details = [];
-  if (!name || name.trim().length < 2) {
-    details.push({ field: 'name', message: 'Name must be at least 2 characters.' });
-  }
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    details.push({ field: 'email', message: 'Enter a valid email address.' });
-  }
-  if (!password || password.length < 8) {
-    details.push({ field: 'password', message: 'Password must be at least 8 characters.' });
-  }
-  if (details.length > 0) throw ApiError.validationError(details);
-
-  // Check duplicate email
-  const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (existing) {
-    throw ApiError.conflict('EMAIL_TAKEN', 'An account with this email already exists.', [
-      { field: 'email', message: 'This email is already registered.' },
-    ]);
-  }
-
-  // Create user
-  const passwordHash = await hashPassword(password);
-  const user = await prisma.user.create({
-    data: {
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      passwordHash,
-      roles: [ROLES.STUDENT],
-      status: USER_STATUS.PENDING_VERIFICATION,
-      emailVerified: false,
-    },
-  });
-
-  // Send verification email
-  try {
-    const token = await createVerificationToken(user.id);
-    await sendVerificationEmail(user.email, user.name, token);
-  } catch (err) {
-    logger.warn('Failed to send verification email:', err.message);
-  }
-
-  created(res, userDto(user));
+  const user = await authService.register(req.body);
+  return created(res, user, 'Registration successful. A verification OTP has been sent to your email.');
 });
 
 /**
- * POST /auth/login
+ * POST /api/v1/auth/login
  */
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
 
-  if (!email || !password) {
-    throw ApiError.invalidCredentials();
-  }
+  const { user, accessToken, rawRefreshToken } = await authService.login(email, password, metadata);
 
-  const user = await prisma.user.findUnique({
-    where: { email: email.toLowerCase().trim() },
-  });
+  // Set secure, httpOnly refresh cookie
+  setRefreshTokenCookie(res, rawRefreshToken);
 
-  if (!user) throw ApiError.invalidCredentials();
-
-  // Check suspended
-  if (user.status === USER_STATUS.SUSPENDED) {
-    throw ApiError.forbidden('ACCOUNT_SUSPENDED', 'Your account has been suspended. Contact support.');
-  }
-
-  // Compare password
-  const valid = await comparePassword(password, user.passwordHash);
-  if (!valid) throw ApiError.invalidCredentials();
-
-  // Generate tokens
-  const accessToken = signAccessToken({ userId: user.id, roles: user.roles });
-  const refreshToken = signRefreshToken({ userId: user.id });
-
-  // Set refresh token cookie
-  setRefreshCookie(res, refreshToken);
-
-  ok(res, { accessToken, user: userDto(user) });
+  return ok(res, { user, accessToken }, 'Login successful.');
 });
 
 /**
- * POST /auth/refresh
+ * POST /api/v1/auth/logout
+ */
+const logout = asyncHandler(async (req, res) => {
+  const rawRefreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE_NAME] || req.body?.refreshToken;
+
+  if (rawRefreshToken) {
+    await authService.logout(rawRefreshToken);
+  }
+
+  clearRefreshTokenCookie(res);
+  return ok(res, null, 'Logged out successfully.');
+});
+
+/**
+ * POST /api/v1/auth/refresh (or /refresh-token)
  */
 const refresh = asyncHandler(async (req, res) => {
-  const token = req.cookies?.refreshToken;
-  if (!token) throw ApiError.unauthorized('UNAUTHENTICATED', 'No refresh token provided.');
+  const rawRefreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE_NAME] || req.body?.refreshToken;
 
-  let payload;
-  try {
-    payload = verifyRefreshToken(token);
-  } catch (err) {
-    clearRefreshCookie(res);
-    if (err.name === 'TokenExpiredError') {
-      throw ApiError.unauthorized('TOKEN_EXPIRED', 'Your session has expired. Please log in again.');
-    }
-    throw ApiError.unauthorized('UNAUTHENTICATED', 'Invalid refresh token.');
+  if (!rawRefreshToken) {
+    throw ApiError.unauthorized('UNAUTHENTICATED', 'Refresh token required.');
   }
 
-  const user = await prisma.user.findUnique({ where: { id: payload.userId } });
-  if (!user) {
-    clearRefreshCookie(res);
-    throw ApiError.unauthorized('UNAUTHENTICATED', 'User not found.');
-  }
-  if (user.status === USER_STATUS.SUSPENDED) {
-    clearRefreshCookie(res);
-    throw ApiError.forbidden('ACCOUNT_SUSPENDED', 'Your account has been suspended.');
-  }
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
 
-  // Issue new tokens
-  const accessToken = signAccessToken({ userId: user.id, roles: user.roles });
-  const newRefreshToken = signRefreshToken({ userId: user.id });
-  setRefreshCookie(res, newRefreshToken);
+  const { user, accessToken, newRawRefreshToken } = await authService.refreshToken(rawRefreshToken, metadata);
 
-  ok(res, { accessToken, user: userDto(user) });
+  // Set updated rotated refresh cookie
+  setRefreshTokenCookie(res, newRawRefreshToken);
+
+  return ok(res, { user, accessToken }, 'Token refreshed successfully.');
 });
 
 /**
- * POST /auth/logout
- */
-const logout = asyncHandler(async (_req, res) => {
-  clearRefreshCookie(res);
-  noContent(res);
-});
-
-/**
- * GET /auth/me
+ * GET /api/v1/auth/me
  */
 const getMe = asyncHandler(async (req, res) => {
-  ok(res, userDto(req.user));
+  const user = await authService.getMe(req.user.id);
+  return ok(res, user);
 });
 
 /**
- * PATCH /auth/me
- */
-const updateMe = asyncHandler(async (req, res) => {
-  const { name } = req.body;
-  if (!name || name.trim().length < 2) {
-    throw ApiError.validationError([{ field: 'name', message: 'Name must be at least 2 characters.' }]);
-  }
-
-  const user = await prisma.user.update({
-    where: { id: req.user.id },
-    data: { name: name.trim() },
-  });
-
-  ok(res, userDto(user));
-});
-
-/**
- * POST /auth/verify-email
- */
-const verifyEmail = asyncHandler(async (req, res) => {
-  const { token } = req.body;
-  if (!token) throw ApiError.badRequest('TOKEN_INVALID', 'Verification token is required.');
-
-  const authToken = await prisma.authToken.findUnique({ where: { token } });
-
-  if (!authToken || authToken.type !== 'EMAIL_VERIFY') {
-    throw ApiError.badRequest('TOKEN_INVALID', 'Invalid verification token.');
-  }
-  if (authToken.usedAt) {
-    throw ApiError.badRequest('TOKEN_INVALID', 'This token has already been used.');
-  }
-  if (new Date() > authToken.expiresAt) {
-    throw ApiError.badRequest('TOKEN_EXPIRED', 'This verification link has expired. Request a new one.');
-  }
-
-  // Mark token as used and verify user
-  await prisma.$transaction([
-    prisma.authToken.update({ where: { id: authToken.id }, data: { usedAt: new Date() } }),
-    prisma.user.update({
-      where: { id: authToken.userId },
-      data: { emailVerified: true, status: USER_STATUS.ACTIVE },
-    }),
-  ]);
-
-  message(res, 'Email verified successfully.');
-});
-
-/**
- * POST /auth/resend-verification
- */
-const resendVerification = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-  // Always return same message to prevent email enumeration
-  const genericMsg = 'If an account with that email exists, a verification email has been sent.';
-
-  if (!email) return message(res, genericMsg);
-
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!user || user.emailVerified) return message(res, genericMsg);
-
-  try {
-    const token = await createVerificationToken(user.id);
-    await sendVerificationEmail(user.email, user.name, token);
-  } catch (err) {
-    logger.warn('Failed to resend verification email:', err.message);
-  }
-
-  message(res, genericMsg);
-});
-
-/**
- * POST /auth/forgot-password
+ * POST /api/v1/auth/forgot-password
  */
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  const genericMsg = 'If an account with that email exists, a password reset email has been sent.';
-
-  if (!email) return message(res, genericMsg);
-
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!user) return message(res, genericMsg);
-
-  try {
-    const token = await createPasswordResetToken(user.id);
-    await sendPasswordResetEmail(user.email, user.name, token);
-  } catch (err) {
-    logger.warn('Failed to send password reset email:', err.message);
-  }
-
-  message(res, genericMsg);
+  const result = await authService.forgotPassword(email);
+  return ok(res, null, result.message);
 });
 
 /**
- * POST /auth/reset-password
+ * POST /api/v1/auth/reset-password
  */
 const resetPassword = asyncHandler(async (req, res) => {
   const { token, password } = req.body;
+  const result = await authService.resetPassword(token, password);
+  return ok(res, null, result.message);
+});
 
-  if (!token) throw ApiError.badRequest('TOKEN_INVALID', 'Reset token is required.');
-  if (!password || password.length < 8) {
-    throw ApiError.validationError([{ field: 'password', message: 'Password must be at least 8 characters.' }]);
-  }
+/**
+ * GET or POST /api/v1/auth/verify-email
+ */
+const verifyEmail = asyncHandler(async (req, res) => {
+  const token = req.params?.token || req.query?.token || req.body?.token;
+  const result = await authService.verifyEmail(token);
+  return ok(res, null, result.message);
+});
 
-  const authToken = await prisma.authToken.findUnique({ where: { token } });
+/**
+ * POST /api/v1/auth/resend-verification
+ */
+const resendVerification = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  const result = await authService.resendVerification(email);
+  return ok(res, null, result.message);
+});
 
-  if (!authToken || authToken.type !== 'PASSWORD_RESET') {
-    throw ApiError.badRequest('TOKEN_INVALID', 'Invalid reset token.');
-  }
-  if (authToken.usedAt) {
-    throw ApiError.badRequest('TOKEN_INVALID', 'This token has already been used.');
-  }
-  if (new Date() > authToken.expiresAt) {
-    throw ApiError.badRequest('TOKEN_EXPIRED', 'This reset link has expired. Request a new one.');
-  }
+// ─── OTP Handlers ─────────────────────────────────────────────────────────────
 
-  const passwordHash = await hashPassword(password);
+/**
+ * POST /api/v1/auth/otp/send
+ */
+const sendOtp = asyncHandler(async (req, res) => {
+  const { email, purpose } = req.body;
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
 
-  await prisma.$transaction([
-    prisma.authToken.update({ where: { id: authToken.id }, data: { usedAt: new Date() } }),
-    prisma.user.update({
-      where: { id: authToken.userId },
-      data: { passwordHash },
-    }),
-  ]);
+  const result = await otpService.generateAndSendOtp({ email, purpose, ...metadata });
+  return ok(res, result, result.message);
+});
 
-  message(res, 'Password reset successfully. You can now log in with your new password.');
+/**
+ * POST /api/v1/auth/otp/verify-registration
+ */
+const verifyRegistrationOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+
+  const { user, accessToken, rawRefreshToken } = await otpService.verifyRegistration({
+    email,
+    otp,
+    ...metadata,
+  });
+
+  setRefreshTokenCookie(res, rawRefreshToken);
+  return ok(res, { user, accessToken }, 'Email verified successfully.');
+});
+
+/**
+ * POST /api/v1/auth/otp/login
+ */
+const loginWithOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+
+  const { user, accessToken, rawRefreshToken } = await otpService.loginWithOtp({
+    email,
+    otp,
+    ...metadata,
+  });
+
+  setRefreshTokenCookie(res, rawRefreshToken);
+  return ok(res, { user, accessToken }, 'Login successful.');
+});
+
+/**
+ * POST /api/v1/auth/otp/verify-reset
+ */
+const verifyResetOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const result = await otpService.verifyResetOtp({ email, otp });
+  return ok(res, result, result.message);
 });
 
 module.exports = {
   register,
   login,
-  refresh,
   logout,
+  refresh,
   getMe,
-  updateMe,
-  verifyEmail,
-  resendVerification,
   forgotPassword,
   resetPassword,
+  verifyEmail,
+  resendVerification,
+  sendOtp,
+  verifyRegistrationOtp,
+  loginWithOtp,
+  verifyResetOtp,
 };

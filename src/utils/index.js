@@ -1,3 +1,5 @@
+'use strict';
+
 const ApiError = require('./ApiError');
 const { ok, created, noContent, message } = require('./response.util');
 const {
@@ -10,14 +12,20 @@ const {
 } = require('./pagination.util');
 const { hashPassword, comparePassword } = require('./hash.util');
 const {
+  generateAccessToken,
+  verifyAccessToken,
+  generateRefreshToken,
+  hashToken,
+  generateRandomToken,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
   signAccessToken,
   signRefreshToken,
-  verifyAccessToken,
   verifyRefreshToken,
-  generateRandomToken,
   setRefreshCookie,
   clearRefreshCookie,
 } = require('./token.util');
+const { setRefreshTokenCookie: setCookie, clearRefreshTokenCookie: clearCookie } = require('./cookie.util');
 const { slugify, uniqueSlug } = require('./slug.util');
 
 /**
@@ -30,7 +38,7 @@ function asyncHandler(fn) {
 
 /**
  * Transform a Prisma record to the frontend's expected shape.
- * Maps `id` → `_id` and removes internal fields.
+ * Maps `id` -> `_id` and removes internal fields.
  * @param {object} record - Prisma record
  * @param {string[]} [omit] - fields to omit (e.g., 'passwordHash')
  * @returns {object}
@@ -75,11 +83,17 @@ module.exports = {
   // Auth helpers
   hashPassword,
   comparePassword,
+  generateAccessToken,
+  verifyAccessToken,
+  generateRefreshToken,
+  hashToken,
+  generateRandomToken,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+  // Backward compatibility
   signAccessToken,
   signRefreshToken,
-  verifyAccessToken,
   verifyRefreshToken,
-  generateRandomToken,
   setRefreshCookie,
   clearRefreshCookie,
 

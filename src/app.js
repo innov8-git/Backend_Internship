@@ -5,15 +5,18 @@ const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 const hpp = require('hpp');
 const path = require('path');
+const swaggerUi = require('swagger-ui-express');
 
 const config = require('./config');
+const { swaggerSpec } = require('./config/swagger.config');
 const { createCorsOptions } = require('./config/cors.config');
 const { createGlobalLimiter } = require('./config/rate-limit.config');
 const { errorHandler, notFoundHandler } = require('./common/filters/error-handler');
 const logger = require('./libs/logger');
 
-// ─── Route imports ─────────────────────────────────────────────────────────
+// ─── Route imports ───────────────────────────────────────────────────────────
 const authRoutes = require('./modules/auth/auth.routes');
+const rbacRoutes = require('./modules/auth/rbac.routes');
 const catalogRoutes = require('./modules/catalog/catalog.routes');
 const assessmentRoutes = require('./modules/assessments/assessments.routes');
 const enrollmentRoutes = require('./modules/enrollment/enrollment.routes');
@@ -27,22 +30,26 @@ const scheduleRoutes = require('./modules/schedule/schedule.routes');
 
 const app = express();
 
-// ─── Security middleware ────────────────────────────────────────────────────
-app.use(helmet());
+// ─── Security middleware ─────────────────────────────────────────────────────
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Allows Swagger UI to load assets cleanly
+  }),
+);
 app.use(hpp());
 
-// ─── CORS ───────────────────────────────────────────────────────────────────
+// ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use(createCorsOptions());
 
-// ─── Request parsing ────────────────────────────────────────────────────────
+// ─── Request parsing ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// ─── Compression ────────────────────────────────────────────────────────────
+// ─── Compression ──────────────────────────────────────────────────────────────
 app.use(compression());
 
-// ─── HTTP request logging ───────────────────────────────────────────────────
+// ─── HTTP request logging ────────────────────────────────────────────────────
 const morganFormat = config.isDev ? 'dev' : 'combined';
 app.use(
   morgan(morganFormat, {
@@ -51,15 +58,24 @@ app.use(
   }),
 );
 
-// ─── Rate limiting ──────────────────────────────────────────────────────────
+// ─── Rate limiting ───────────────────────────────────────────────────────────
 if (!config.isTest) {
   app.use(createGlobalLimiter());
 }
 
-// ─── Static files (uploaded files for local storage) ────────────────────────
+// ─── Static files (uploaded files for local storage) ─────────────────────────
 app.use('/uploads', express.static(path.join(process.cwd(), 'public/uploads')));
 
-// ─── Health check ───────────────────────────────────────────────────────────
+// ─── Swagger API Documentation ───────────────────────────────────────────────
+const swaggerUiOptions = {
+  customSiteTitle: 'Internship Portal API Documentation',
+  customCss: '.swagger-ui .topbar { display: none }',
+};
+
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+
+// ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -68,10 +84,11 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// ─── API Routes ─────────────────────────────────────────────────────────────
+// ─── API Routes ──────────────────────────────────────────────────────────────
 const api = config.server.apiPrefix;
 
 app.use(`${api}/auth`, authRoutes);
+app.use(`${api}/rbac`, rbacRoutes);
 app.use(api, catalogRoutes);
 app.use(`${api}/assessments`, assessmentRoutes);
 app.use(api, enrollmentRoutes);
@@ -83,10 +100,10 @@ app.use(`${api}/trainer`, trainerRoutes);
 app.use(`${api}/admin`, adminRoutes);
 app.use(api, scheduleRoutes);
 
-// ─── 404 catch-all ──────────────────────────────────────────────────────────
+// ─── 404 catch-all ───────────────────────────────────────────────────────────
 app.use(notFoundHandler);
 
-// ─── Global error handler (must be last) ────────────────────────────────────
+// ─── Global error handler (must be last) ─────────────────────────────────────
 app.use(errorHandler);
 
 module.exports = app;

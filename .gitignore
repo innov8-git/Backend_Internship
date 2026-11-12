@@ -11,3 +11,5 @@ public/uploads/*
 .DS_Store
 Thumbs.db
 
+
+docs/*.md
