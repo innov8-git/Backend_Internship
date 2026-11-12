@@ -5,6 +5,7 @@ const { ApiError, hashPassword, comparePassword } = require('../../../utils');
 const tokenService = require('./token.service');
 const rbacService = require('./rbac.service');
 const logger = require('../../../libs/logger');
+const otpService = require('./otp.service');
 
 /**
  * Authentication Service
@@ -78,6 +79,16 @@ class AuthService {
 
       return user;
     });
+
+    // Generate OTP for email verification
+    try {
+      await otpService.generateAndSendOtp({
+        email: result.email,
+        purpose: 'REGISTRATION_VERIFY',
+      });
+    } catch (err) {
+      logger.warn('Failed to dispatch registration OTP:', err.message);
+    }
 
     // Generate email verification token (non-blocking email send)
     try {

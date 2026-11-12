@@ -1,6 +1,7 @@
 'use strict';
 
 const authService = require('./services/auth.service');
+const otpService = require('./services/otp.service');
 const {
   asyncHandler,
   setRefreshTokenCookie,
@@ -13,7 +14,7 @@ const {
 
 /**
  * Authentication Controller
- * Delegates business logic to AuthService and formats HTTP responses.
+ * Delegates business logic to AuthService and OtpService, formatting HTTP responses.
  */
 
 /**
@@ -21,7 +22,7 @@ const {
  */
 const register = asyncHandler(async (req, res) => {
   const user = await authService.register(req.body);
-  return created(res, user, 'Registration successful. Please check your email to verify your account.');
+  return created(res, user, 'Registration successful. A verification OTP has been sent to your email.');
 });
 
 /**
@@ -123,6 +124,71 @@ const resendVerification = asyncHandler(async (req, res) => {
   return ok(res, null, result.message);
 });
 
+// ─── OTP Handlers ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/auth/otp/send
+ */
+const sendOtp = asyncHandler(async (req, res) => {
+  const { email, purpose } = req.body;
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+
+  const result = await otpService.generateAndSendOtp({ email, purpose, ...metadata });
+  return ok(res, result, result.message);
+});
+
+/**
+ * POST /api/v1/auth/otp/verify-registration
+ */
+const verifyRegistrationOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+
+  const { user, accessToken, rawRefreshToken } = await otpService.verifyRegistration({
+    email,
+    otp,
+    ...metadata,
+  });
+
+  setRefreshTokenCookie(res, rawRefreshToken);
+  return ok(res, { user, accessToken }, 'Email verified successfully.');
+});
+
+/**
+ * POST /api/v1/auth/otp/login
+ */
+const loginWithOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+
+  const { user, accessToken, rawRefreshToken } = await otpService.loginWithOtp({
+    email,
+    otp,
+    ...metadata,
+  });
+
+  setRefreshTokenCookie(res, rawRefreshToken);
+  return ok(res, { user, accessToken }, 'Login successful.');
+});
+
+/**
+ * POST /api/v1/auth/otp/verify-reset
+ */
+const verifyResetOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const result = await otpService.verifyResetOtp({ email, otp });
+  return ok(res, result, result.message);
+});
+
 module.exports = {
   register,
   login,
@@ -133,4 +199,8 @@ module.exports = {
   resetPassword,
   verifyEmail,
   resendVerification,
+  sendOtp,
+  verifyRegistrationOtp,
+  loginWithOtp,
+  verifyResetOtp,
 };

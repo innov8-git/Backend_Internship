@@ -9,7 +9,7 @@ const swaggerDefinition = {
     title: 'Internship Portal Backend API',
     version: '1.0.0',
     description:
-      'Production-grade RESTful API for the Internship Portal supporting Role-Based Access Control (RBAC), Supabase PostgreSQL database, JWT authentication, and automated task workflows.',
+      'Production-grade RESTful API for the Internship Portal supporting Role-Based Access Control (RBAC), Supabase PostgreSQL database, JWT authentication, Email OTP Verification, and automated task workflows.',
     contact: {
       name: 'API Support',
       email: 'support@alfre.com',
@@ -141,6 +141,42 @@ const swaggerDefinition = {
           password: { type: 'string', format: 'password', example: 'NewPassword123' },
         },
       },
+      SendOtpRequest: {
+        type: 'object',
+        required: ['email', 'purpose'],
+        properties: {
+          email: { type: 'string', format: 'email', example: 'shantanud303@gmail.com' },
+          purpose: {
+            type: 'string',
+            enum: ['REGISTRATION_VERIFY', 'LOGIN', 'PASSWORD_RESET'],
+            example: 'LOGIN',
+          },
+        },
+      },
+      VerifyRegistrationOtpRequest: {
+        type: 'object',
+        required: ['email', 'otp'],
+        properties: {
+          email: { type: 'string', format: 'email', example: 'shantanud303@gmail.com' },
+          otp: { type: 'string', example: '123456', description: '6-digit numeric OTP' },
+        },
+      },
+      LoginOtpRequest: {
+        type: 'object',
+        required: ['email', 'otp'],
+        properties: {
+          email: { type: 'string', format: 'email', example: 'shantanud303@gmail.com' },
+          otp: { type: 'string', example: '123456', description: '6-digit numeric OTP' },
+        },
+      },
+      VerifyResetOtpRequest: {
+        type: 'object',
+        required: ['email', 'otp'],
+        properties: {
+          email: { type: 'string', format: 'email', example: 'shantanud303@gmail.com' },
+          otp: { type: 'string', example: '123456', description: '6-digit numeric OTP' },
+        },
+      },
       AssignRoleRequest: {
         type: 'object',
         required: ['userId', 'roleName'],
@@ -155,7 +191,7 @@ const swaggerDefinition = {
     '/auth/register': {
       post: {
         summary: 'Register a new Student or Trainer',
-        description: 'Single registration endpoint with conditional validation for Students vs Trainers.',
+        description: 'Single registration endpoint with conditional validation for Students vs Trainers. Sends an OTP code to user email.',
         tags: ['Authentication'],
         requestBody: {
           required: true,
@@ -263,17 +299,89 @@ const swaggerDefinition = {
         },
       },
     },
-    '/auth/verify-email/{token}': {
-      get: {
-        summary: 'Verify Email Address',
-        description: 'Validates one-time verification token and marks account as ACTIVE.',
-        tags: ['Authentication'],
-        parameters: [
-          { in: 'path', name: 'token', required: true, schema: { type: 'string' } },
-        ],
+    '/auth/otp/send': {
+      post: {
+        summary: 'Send One-Time Password (OTP)',
+        description: 'Generates a cryptographically random 6-digit OTP, stores SHA-256 hash in DB with 5-minute expiry, and dispatches HTML email.',
+        tags: ['OTP Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/SendOtpRequest' } },
+          },
+        },
         responses: {
-          200: { description: 'Email verified' },
-          400: { description: 'Invalid or expired token' },
+          200: { description: 'OTP sent to email', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiResponse' } } } },
+          429: { description: 'Cooldown in progress (60s rate limit)' },
+        },
+      },
+    },
+    '/auth/otp/resend': {
+      post: {
+        summary: 'Resend OTP Code',
+        description: 'Resends a fresh 6-digit OTP after checking 60-second cooldown.',
+        tags: ['OTP Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/SendOtpRequest' } },
+          },
+        },
+        responses: {
+          200: { description: 'OTP resent to email' },
+          429: { description: 'Please wait before requesting a new OTP' },
+        },
+      },
+    },
+    '/auth/otp/verify-registration': {
+      post: {
+        summary: 'Verify Registration via OTP',
+        description: 'Validates 6-digit OTP for REGISTRATION_VERIFY purpose, activates user account (ACTIVE, emailVerified: true), and logs the user in.',
+        tags: ['OTP Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/VerifyRegistrationOtpRequest' } },
+          },
+        },
+        responses: {
+          200: { description: 'Registration verified and logged in', content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginResponse' } } } },
+          400: { description: 'Invalid OTP or expired' },
+        },
+      },
+    },
+    '/auth/otp/login': {
+      post: {
+        summary: 'Passwordless Login via OTP',
+        description: 'Authenticates user with 6-digit OTP, creates session, returns JWT Access Token, and sets Refresh Token cookie.',
+        tags: ['OTP Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/LoginOtpRequest' } },
+          },
+        },
+        responses: {
+          200: { description: 'OTP login successful', content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginResponse' } } } },
+          400: { description: 'Invalid or expired OTP' },
+          403: { description: 'Account suspended' },
+        },
+      },
+    },
+    '/auth/otp/verify-reset': {
+      post: {
+        summary: 'Verify Password Reset OTP',
+        description: 'Validates 6-digit OTP for PASSWORD_RESET purpose and returns a secure reset token consumable by /reset-password.',
+        tags: ['OTP Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/VerifyResetOtpRequest' } },
+          },
+        },
+        responses: {
+          200: { description: 'OTP verified, resetToken returned' },
+          400: { description: 'Invalid or expired OTP' },
         },
       },
     },
@@ -325,4 +433,3 @@ const swaggerSpec = swaggerJsdoc({
 });
 
 module.exports = { swaggerSpec };
-

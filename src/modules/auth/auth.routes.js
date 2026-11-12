@@ -11,6 +11,10 @@ const {
   forgotPasswordSchema,
   resetPasswordSchema,
   refreshTokenSchema,
+  sendOtpSchema,
+  verifyRegistrationOtpSchema,
+  loginOtpSchema,
+  verifyResetOtpSchema,
 } = require('./dto');
 
 const router = Router();
@@ -76,6 +80,43 @@ router.post(
   createAuthLimiter(),
   validate(forgotPasswordSchema),
   authController.resendVerification,
+);
+
+// ─── OTP Endpoints ────────────────────────────────────────────────────────────
+
+router.post(
+  '/otp/send',
+  createAuthLimiter(),
+  validate(sendOtpSchema),
+  authController.sendOtp,
+);
+
+router.post(
+  '/otp/resend',
+  createAuthLimiter(),
+  validate(sendOtpSchema),
+  authController.sendOtp,
+);
+
+router.post(
+  '/otp/verify-registration',
+  createAuthLimiter(),
+  validate(verifyRegistrationOtpSchema),
+  authController.verifyRegistrationOtp,
+);
+
+router.post(
+  '/otp/login',
+  createLoginLimiter(),
+  validate(loginOtpSchema),
+  authController.loginWithOtp,
+);
+
+router.post(
+  '/otp/verify-reset',
+  createAuthLimiter(),
+  validate(verifyResetOtpSchema),
+  authController.verifyResetOtp,
 );
 
 // Protected routes
