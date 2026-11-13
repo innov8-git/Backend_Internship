@@ -92,8 +92,10 @@ const refresh = asyncHandler(async (req, res) => {
 
   const { user, accessToken, newRawRefreshToken } = await authService.refreshToken(rawRefreshToken, metadata);
 
-  // Set updated rotated refresh cookie
-  setRefreshTokenCookie(res, newRawRefreshToken);
+  // Set updated rotated refresh cookie if a new token was generated
+  if (newRawRefreshToken) {
+    setRefreshTokenCookie(res, newRawRefreshToken);
+  }
 
   return ok(res, { user, accessToken }, 'Token refreshed successfully.');
 });

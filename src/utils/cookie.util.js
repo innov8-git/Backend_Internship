@@ -19,7 +19,7 @@ function setRefreshTokenCookie(res, refreshToken) {
     httpOnly: true,
     secure: config.isProd,
     sameSite: 'lax',
-    path: '/api/v1/auth',
+    path: '/',
     maxAge: DEFAULT_MAX_AGE_MS,
   });
 }
@@ -33,7 +33,7 @@ function clearRefreshTokenCookie(res) {
     httpOnly: true,
     secure: config.isProd,
     sameSite: 'lax',
-    path: '/api/v1/auth',
+    path: '/',
   });
 }
 
