@@ -87,21 +87,20 @@ const swaggerDefinition = {
           name: { type: 'string', example: 'Alex Morgan' },
           email: { type: 'string', format: 'email', example: 'alex@example.com' },
           password: { type: 'string', format: 'password', example: 'SecurePassword123' },
-          role: { type: 'string', enum: ['STUDENT', 'TRAINER'], default: 'STUDENT' },
         },
       },
       RegisterTrainerRequest: {
         type: 'object',
-        required: ['name', 'email', 'password', 'role', 'domain', 'experience'],
+        required: ['name', 'email', 'password', 'domain', 'experience'],
         properties: {
           name: { type: 'string', example: 'Sarah Connor' },
           email: { type: 'string', format: 'email', example: 'sarah.trainer@example.com' },
           password: { type: 'string', format: 'password', example: 'MentorPass123' },
-          role: { type: 'string', example: 'TRAINER' },
           domain: { type: 'string', example: 'Full Stack Web Development' },
           experience: { type: 'string', example: '5-8 years' },
-          linkedinUrl: { type: 'string', example: 'https://linkedin.com/in/sarah-mentor' },
           organization: { type: 'string', example: 'Tech Labs' },
+          linkedinUrl: { type: 'string', example: 'https://linkedin.com/in/sarah-mentor' },
+          resumeUrl: { type: 'string', example: 'https://example.com/resumes/sarah.pdf' },
         },
       },
       LoginRequest: {
@@ -188,6 +187,42 @@ const swaggerDefinition = {
     },
   },
   paths: {
+    '/auth/register/student': {
+      post: {
+        summary: 'Student Registration (Dedicated)',
+        description: 'Quick student onboarding with name, email, and password. Automatically dispatches a 6-digit verification OTP.',
+        tags: ['Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/RegisterStudentRequest' } },
+          },
+        },
+        responses: {
+          201: { description: 'Student registered successfully', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiResponse' } } } },
+          409: { description: 'Email already exists' },
+          422: { description: 'Validation failed' },
+        },
+      },
+    },
+    '/auth/register/trainer': {
+      post: {
+        summary: 'Trainer Registration (Dedicated)',
+        description: 'Professional onboarding for mentors/trainers with domain qualifications. Automatically dispatches a 6-digit verification OTP and sets account under admin review.',
+        tags: ['Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/RegisterTrainerRequest' } },
+          },
+        },
+        responses: {
+          201: { description: 'Trainer application submitted for review', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiResponse' } } } },
+          409: { description: 'Email already exists' },
+          422: { description: 'Validation failed' },
+        },
+      },
+    },
     '/auth/register': {
       post: {
         summary: 'Register a new Student or Trainer',

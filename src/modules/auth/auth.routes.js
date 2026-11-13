@@ -7,6 +7,8 @@ const { createAuthLimiter, createLoginLimiter } = require('../../config/rate-lim
 const { validate } = require('../../common/pipes');
 const {
   registerSchema,
+  registerStudentSchema,
+  registerTrainerSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -19,7 +21,21 @@ const {
 
 const router = Router();
 
-// Public routes with validation & rate limiting
+// Public registration routes with validation & rate limiting
+router.post(
+  '/register/student',
+  createAuthLimiter(),
+  validate(registerStudentSchema),
+  authController.registerStudent,
+);
+
+router.post(
+  '/register/trainer',
+  createAuthLimiter(),
+  validate(registerTrainerSchema),
+  authController.registerTrainer,
+);
+
 router.post(
   '/register',
   createAuthLimiter(),

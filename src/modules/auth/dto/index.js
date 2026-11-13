@@ -1,6 +1,10 @@
 'use strict';
 
-const { registerSchema } = require('./register.dto');
+const {
+  registerSchema,
+  registerStudentSchema,
+  registerTrainerSchema,
+} = require('./register.dto');
 const { loginSchema } = require('./login.dto');
 const { forgotPasswordSchema } = require('./forgot-password.dto');
 const { resetPasswordSchema } = require('./reset-password.dto');
@@ -14,6 +18,8 @@ const {
 
 module.exports = {
   registerSchema,
+  registerStudentSchema,
+  registerTrainerSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
