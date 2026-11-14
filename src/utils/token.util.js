@@ -3,7 +3,12 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const config = require('../config');
-const { setRefreshTokenCookie, clearRefreshTokenCookie, REFRESH_TOKEN_COOKIE_NAME } = require('./cookie.util');
+const {
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+  getRefreshTokenFromRequest,
+  REFRESH_TOKEN_COOKIE_NAME,
+} = require('./cookie.util');
 
 /**
  * JWT & Cryptographic Token Utilities
@@ -79,6 +84,7 @@ module.exports = {
   generateRandomToken,
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
+  getRefreshTokenFromRequest,
   REFRESH_TOKEN_COOKIE_NAME,
   // Aliases
   signAccessToken,

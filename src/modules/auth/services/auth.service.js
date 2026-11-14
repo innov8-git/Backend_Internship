@@ -80,25 +80,22 @@ class AuthService {
       return user;
     });
 
-    // Generate OTP for email verification
-    try {
-      await otpService.generateAndSendOtp({
-        email: result.email,
-        purpose: 'REGISTRATION_VERIFY',
-      });
-    } catch (err) {
+    // Generate OTP for email verification (fire-and-forget — never blocks the response)
+    otpService.generateAndSendOtp({
+      email: result.email,
+      purpose: 'REGISTRATION_VERIFY',
+    }).catch((err) => {
       logger.warn('Failed to dispatch registration OTP:', err.message);
-    }
+    });
 
-    // Generate email verification token (non-blocking email send)
-    try {
-      const rawVerifyToken = await tokenService.createEmailVerificationToken(result.id);
-      logger.info(`[Auth] Verification token created for ${result.email}: ${rawVerifyToken}`);
-      // In production with SMTP configured:
-      // await sendEmail({ to: result.email, template: 'verify-email', payload: { token: rawVerifyToken } });
-    } catch (err) {
-      logger.warn(`Failed to dispatch verification email for ${result.email}:`, err.message);
-    }
+    // Generate email verification token (fire-and-forget)
+    tokenService.createEmailVerificationToken(result.id)
+      .then((rawVerifyToken) => {
+        logger.info(`[Auth] Verification token created for ${result.email}: ${rawVerifyToken}`);
+      })
+      .catch((err) => {
+        logger.warn(`Failed to dispatch verification email for ${result.email}:`, err.message);
+      });
 
     return {
       id: result.id,

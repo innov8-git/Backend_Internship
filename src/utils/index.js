@@ -19,6 +19,7 @@ const {
   generateRandomToken,
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
+  getRefreshTokenFromRequest,
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
@@ -90,6 +91,7 @@ module.exports = {
   generateRandomToken,
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
+  getRefreshTokenFromRequest,
   // Backward compatibility
   signAccessToken,
   signRefreshToken,

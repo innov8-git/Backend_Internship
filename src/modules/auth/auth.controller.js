@@ -2,10 +2,12 @@
 
 const authService = require('./services/auth.service');
 const otpService = require('./services/otp.service');
+const logger = require('../../libs/logger');
 const {
   asyncHandler,
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
+  getRefreshTokenFromRequest,
   REFRESH_TOKEN_COOKIE_NAME,
   ok,
   created,
@@ -39,6 +41,7 @@ const login = asyncHandler(async (req, res) => {
 
   // Set secure, httpOnly refresh cookie
   setRefreshTokenCookie(res, rawRefreshToken);
+  logger.info(`[Login] Refresh token cookie set for user: ${user.email}`);
 
   return ok(res, { user, accessToken }, 'Login successful.');
 });
@@ -47,7 +50,7 @@ const login = asyncHandler(async (req, res) => {
  * POST /api/v1/auth/logout
  */
 const logout = asyncHandler(async (req, res) => {
-  const rawRefreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE_NAME] || req.body?.refreshToken;
+  const rawRefreshToken = getRefreshTokenFromRequest(req);
 
   if (rawRefreshToken) {
     await authService.logout(rawRefreshToken);
@@ -61,9 +64,10 @@ const logout = asyncHandler(async (req, res) => {
  * POST /api/v1/auth/refresh (or /refresh-token)
  */
 const refresh = asyncHandler(async (req, res) => {
-  const rawRefreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE_NAME] || req.body?.refreshToken;
+  const rawRefreshToken = getRefreshTokenFromRequest(req);
 
   if (!rawRefreshToken) {
+    logger.warn(`[Refresh] No valid refresh token found in cookies or body. Cookies present: ${Object.keys(req.cookies || {}).join(', ') || 'none'}`);
     throw ApiError.unauthorized('UNAUTHENTICATED', 'Refresh token required.');
   }
 
@@ -73,6 +77,7 @@ const refresh = asyncHandler(async (req, res) => {
   };
 
   const { user, accessToken, newRawRefreshToken } = await authService.refreshToken(rawRefreshToken, metadata);
+  logger.info(`[Refresh] Token refreshed successfully for user: ${user.email}`);
 
   // Set updated rotated refresh cookie
   setRefreshTokenCookie(res, newRawRefreshToken);
