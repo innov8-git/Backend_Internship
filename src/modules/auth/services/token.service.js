@@ -2,6 +2,7 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { prisma } = require('../../../database');
+const logger = require('../../../libs/logger');
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -91,10 +92,50 @@ class TokenService {
       throw ApiError.unauthorized('UNAUTHENTICATED', 'Invalid refresh token.');
     }
 
-    // THEFT / REUSE DETECTION:
-    // If a previously revoked/used token is submitted again, someone stolen it!
-    // Invalidate the entire family to protect the user.
+    // THEFT / REUSE DETECTION WITH CONCURRENT REQUEST GRACE PERIOD:
+    // If a previously revoked/used token is submitted again, check if it was recently rotated
+    // (grace period for network latency / concurrent React StrictMode calls / multiple tabs).
     if (existingToken.revoked) {
+      const gracePeriodMs = 60 * 1000;
+      const isWithinGracePeriod =
+        existingToken.usedAt &&
+        Date.now() - new Date(existingToken.usedAt).getTime() < gracePeriodMs;
+
+      if (isWithinGracePeriod && existingToken.user) {
+        logger.info(`[Auth] Concurrent token refresh within grace period for ${existingToken.user.email}`);
+
+        const roles = [];
+        const permissionSet = new Set();
+        for (const ur of existingToken.user.userRoles || []) {
+          if (ur.role) {
+            roles.push(ur.role.name);
+            for (const rp of ur.role.rolePermissions || []) {
+              if (rp.permission?.code) permissionSet.add(rp.permission.code);
+            }
+          }
+        }
+
+        const accessToken = generateAccessToken({
+          sub: existingToken.user.id,
+          email: existingToken.user.email,
+          roles,
+        });
+
+        return {
+          accessToken,
+          newRawRefreshToken: null,
+          user: {
+            id: existingToken.user.id,
+            name: existingToken.user.name,
+            email: existingToken.user.email,
+            status: existingToken.user.status,
+            emailVerified: existingToken.user.emailVerified,
+            roles,
+            permissions: Array.from(permissionSet),
+          },
+        };
+      }
+
       if (existingToken.family) {
         await prisma.token.updateMany({
           where: { family: existingToken.family },
