@@ -2,7 +2,9 @@ const dotenv = require('dotenv');
 const path = require('path');
 
 // Load .env before validation
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config();
 
 const { validateEnv } = require('./env.validation');
 const env = validateEnv();

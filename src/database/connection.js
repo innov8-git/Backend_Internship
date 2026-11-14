@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const config = require('../config');
 const logger = require('../libs/logger');
 
 /**
@@ -8,16 +9,21 @@ const logger = require('../libs/logger');
 /** @type {PrismaClient} */
 let prisma;
 
+const clientOptions = {
+  datasources: {
+    db: {
+      url: config.db.url,
+    },
+  },
+  log: config.isProd ? ['error', 'warn'] : ['query', 'info', 'warn', 'error'],
+};
+
 if (process.env.NODE_ENV === 'production') {
-  prisma = new PrismaClient({
-    log: ['error', 'warn'],
-  });
+  prisma = new PrismaClient(clientOptions);
 } else {
   // Prevent multiple instances during hot-reload (nodemon)
   if (!global.__prisma) {
-    global.__prisma = new PrismaClient({
-      log: ['query', 'info', 'warn', 'error'],
-    });
+    global.__prisma = new PrismaClient(clientOptions);
   }
   prisma = global.__prisma;
 }

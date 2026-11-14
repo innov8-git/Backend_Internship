@@ -20,13 +20,17 @@ const {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
   getRefreshTokenFromRequest,
+  REFRESH_TOKEN_COOKIE_NAME,
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
   setRefreshCookie,
   clearRefreshCookie,
 } = require('./token.util');
-const { setRefreshTokenCookie: setCookie, clearRefreshTokenCookie: clearCookie } = require('./cookie.util');
+const {
+  setRefreshTokenCookie: setCookie,
+  clearRefreshTokenCookie: clearCookie,
+} = require('./cookie.util');
 const { slugify, uniqueSlug } = require('./slug.util');
 
 /**
@@ -92,6 +96,7 @@ module.exports = {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
   getRefreshTokenFromRequest,
+  REFRESH_TOKEN_COOKIE_NAME,
   // Backward compatibility
   signAccessToken,
   signRefreshToken,
