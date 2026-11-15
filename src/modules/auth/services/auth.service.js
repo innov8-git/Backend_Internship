@@ -31,7 +31,7 @@ class AuthService {
     }
 
     const passwordHash = await hashPassword(dto.password);
-    const roleName = dto.role === 'TRAINER' ? 'TRAINER' : 'STUDENT';
+    const roleName = 'STUDENT';
 
     // Verify role exists in database
     const roleRecord = await prisma.roleModel.findUnique({
@@ -61,21 +61,6 @@ class AuthService {
           roleId: roleRecord.id,
         },
       });
-
-      // If Trainer, create extended profile
-      if (roleName === 'TRAINER') {
-        await tx.trainerProfile.create({
-          data: {
-            userId: user.id,
-            domain: dto.domain,
-            experience: dto.experience,
-            linkedinUrl: dto.linkedinUrl || null,
-            organization: dto.organization || null,
-            resumeUrl: dto.resumeUrl || null,
-            isApproved: false, // Trainer accounts require admin approval
-          },
-        });
-      }
 
       return user;
     });

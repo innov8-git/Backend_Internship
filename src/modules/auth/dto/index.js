@@ -3,7 +3,6 @@
 const {
   registerSchema,
   registerStudentSchema,
-  registerTrainerSchema,
 } = require('./register.dto');
 const { loginSchema } = require('./login.dto');
 const { forgotPasswordSchema } = require('./forgot-password.dto');
@@ -19,7 +18,6 @@ const {
 module.exports = {
   registerSchema,
   registerStudentSchema,
-  registerTrainerSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,

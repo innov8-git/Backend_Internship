@@ -8,7 +8,6 @@ const { validate } = require('../../common/pipes');
 const {
   registerSchema,
   registerStudentSchema,
-  registerTrainerSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -27,13 +26,6 @@ router.post(
   createAuthLimiter(),
   validate(registerStudentSchema),
   authController.registerStudent,
-);
-
-router.post(
-  '/register/trainer',
-  createAuthLimiter(),
-  validate(registerTrainerSchema),
-  authController.registerTrainer,
 );
 
 router.post(

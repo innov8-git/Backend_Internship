@@ -3,6 +3,7 @@ const config = require('../../config');
 const logger = require('../logger');
 const { prisma } = require('../../database');
 const { getOtpEmailTemplate } = require('./templates/otp.template');
+const { getWelcomeTrainerEmailTemplate } = require('./templates/welcome-trainer.template');
 
 let transporter = null;
 
@@ -140,10 +141,39 @@ async function sendPasswordResetEmail(email, name, token) {
   });
 }
 
+/**
+ * Send a welcome email to a newly created trainer with their login credentials.
+ * @param {object} options
+ * @param {string} options.to - Trainer email
+ * @param {string} options.name - Trainer full name
+ * @param {string} options.email - Trainer login email
+ * @param {string} options.password - Plain-text password
+ * @param {string} [options.loginUrl] - Client login URL
+ */
+async function sendTrainerWelcomeEmail({ to, name, email, password, loginUrl }) {
+  const resolvedLoginUrl = loginUrl || `${config.clientUrl || 'http://localhost:5173'}/login`;
+  const { subject, html } = getWelcomeTrainerEmailTemplate({
+    name,
+    email,
+    password,
+    loginUrl: resolvedLoginUrl,
+  });
+
+  return sendEmail({
+    to,
+    subject,
+    html,
+    template: 'welcome-trainer',
+    link: resolvedLoginUrl,
+    payload: { name, email },
+  });
+}
+
 module.exports = {
   sendEmail,
   sendOtpEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
+  sendTrainerWelcomeEmail,
   getTransporter,
 };

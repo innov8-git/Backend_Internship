@@ -3,6 +3,11 @@ const adminController = require('./admin.controller');
 const adminCatalogController = require('./admin-catalog.controller');
 const { authenticate, authorize } = require('../../common/guards');
 const { ROLES } = require('../../common/constants');
+const { validate } = require('../../common/pipes');
+const {
+  createTrainerSchema,
+  updateTrainerPrivilegeSchema,
+} = require('./dto/admin-trainer.dto');
 
 const router = Router();
 
@@ -63,5 +68,10 @@ router.get('/teams', adminController.listAdminTeams);
 router.get('/trainer-assignments', adminController.listTrainerAssignments);
 router.post('/trainer-assignments', adminController.createTrainerAssignment);
 router.delete('/trainer-assignments/:id', adminController.deleteTrainerAssignment);
+
+// ─── Trainers Management ─────────────────────────────────────────────────────
+router.get('/trainers', adminController.listTrainers);
+router.post('/trainers', validate(createTrainerSchema), adminController.createTrainer);
+router.patch('/trainers/:id', validate(updateTrainerPrivilegeSchema), adminController.updateTrainerStatus);
 
 module.exports = router;

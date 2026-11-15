@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { prisma } = require('../../database');
 const {
   ApiError,
@@ -8,6 +9,7 @@ const {
   parsePagination,
   parseSort,
   paginatedResponse,
+  hashPassword,
 } = require('../../utils');
 const {
   ROLES,
@@ -21,7 +23,7 @@ const {
   TEAM_STATUS,
 } = require('../../common/constants');
 const { addAudit } = require('../audit-log/audit-log.service');
-const { sendCertificateIssuedEmail } = require('../../libs/email');
+const { sendCertificateIssuedEmail, sendTrainerWelcomeEmail } = require('../../libs/email');
 const logger = require('../../libs/logger');
 
 function userDto(user) {
@@ -913,6 +915,259 @@ const deleteTrainerAssignment = asyncHandler(async (req, res) => {
   noContent(res);
 });
 
+// ─── Trainer Management ────────────────────────────────────────────────────────
+
+const listTrainers = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query, 10);
+  const { search, trainerStatus, privilege } = req.query;
+
+  const where = {
+    OR: [
+      {
+        userRoles: {
+          some: {
+            role: {
+              name: ROLES.TRAINER,
+            },
+          },
+        },
+      },
+      {
+        trainerProfile: {
+          isNot: null,
+        },
+      },
+    ],
+    ...(search && {
+      AND: [
+        {
+          OR: [
+            { name: { contains: String(search), mode: 'insensitive' } },
+            { email: { contains: String(search), mode: 'insensitive' } },
+          ],
+        },
+      ],
+    }),
+  };
+
+  const users = await prisma.user.findMany({
+    where,
+    include: {
+      userRoles: {
+        include: {
+          role: true,
+        },
+      },
+      trainerProfile: true,
+      trainerAssignments: {
+        where: { active: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const formatted = users.map((u) => {
+    const activeAssignments = u.trainerAssignments || [];
+    const assignedStudentCount = activeAssignments.filter((a) => a.enrollmentId).length;
+    const assignedGroupCount = activeAssignments.filter((a) => a.teamId).length;
+    const hasTrainerRole = u.userRoles.some((ur) => ur.role?.name === 'TRAINER');
+    const isTrainer = hasTrainerRole && (u.trainerProfile?.isApproved !== false);
+
+    return {
+      _id: u.id,
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      status: u.status,
+      isTrainer,
+      assignedStudentCount,
+      assignedGroupCount,
+      trainerProfile: u.trainerProfile
+        ? {
+            domain: u.trainerProfile.domain,
+            experience: u.trainerProfile.experience,
+            resumeUrl: u.trainerProfile.resumeUrl,
+            resumeName: u.trainerProfile.resumeUrl ? 'Resume.pdf' : null,
+            linkedinUrl: u.trainerProfile.linkedinUrl,
+            bio: u.trainerProfile.bio,
+            isApproved: u.trainerProfile.isApproved,
+          }
+        : null,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+    };
+  });
+
+  let filtered = formatted;
+  if (privilege === 'active') {
+    filtered = filtered.filter((t) => t.isTrainer);
+  } else if (privilege === 'revoked') {
+    filtered = filtered.filter((t) => !t.isTrainer);
+  }
+
+  if (trainerStatus === 'assigned') {
+    filtered = filtered.filter((t) => t.assignedStudentCount + t.assignedGroupCount > 0);
+  } else if (trainerStatus === 'unassigned') {
+    filtered = filtered.filter((t) => t.assignedStudentCount + t.assignedGroupCount === 0);
+  }
+
+  const total = filtered.length;
+  const pagedItems = filtered.slice(skip, skip + limit);
+
+  ok(res, paginatedResponse(pagedItems, total, page, limit));
+});
+
+const createTrainer = asyncHandler(async (req, res) => {
+  const { name, email, phone, password, domain, experience, bio } = req.body;
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  });
+
+  if (existing) {
+    throw ApiError.conflict('DUPLICATE_EMAIL', 'A user with this email address already exists.', [
+      { field: 'email', message: 'This email is already in use.' },
+    ]);
+  }
+
+  // System generate a secure 10-char password if none or empty provided
+  const systemGenerated = !password || !password.trim();
+  const rawPassword = systemGenerated
+    ? `${crypto.randomBytes(4).toString('hex')}A1!`
+    : password.trim();
+
+  const passwordHash = await hashPassword(rawPassword);
+
+  const trainerRole = await prisma.roleModel.findUnique({
+    where: { name: 'TRAINER' },
+  });
+
+  if (!trainerRole) {
+    throw ApiError.internal('System role "TRAINER" is not configured.');
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        name: name.trim(),
+        email: normalizedEmail,
+        passwordHash,
+        status: 'ACTIVE',
+        emailVerified: true,
+      },
+    });
+
+    await tx.userRole.create({
+      data: {
+        userId: user.id,
+        roleId: trainerRole.id,
+      },
+    });
+
+    const profile = await tx.trainerProfile.create({
+      data: {
+        userId: user.id,
+        domain: domain ? domain.trim() : 'General Mentorship',
+        experience: experience ? experience.trim() : '1+ years',
+        bio: bio ? bio.trim() : null,
+        isApproved: true,
+      },
+    });
+
+    return { user, profile };
+  });
+
+  await addAudit({
+    actorId: req.user.id,
+    action: 'TRAINER_CREATED',
+    entityType: 'User',
+    entityId: result.user.id,
+    details: { email: result.user.email, name: result.user.name },
+    ip: req.ip,
+  });
+
+  // Asynchronously dispatch welcome email with credentials
+  sendTrainerWelcomeEmail({
+    to: result.user.email,
+    name: result.user.name,
+    email: result.user.email,
+    password: rawPassword,
+  }).catch((err) => {
+    logger.error(`[Admin] Failed to dispatch welcome email to trainer ${result.user.email}: ${err.message}`);
+  });
+
+  created(
+    res,
+    {
+      _id: result.user.id,
+      id: result.user.id,
+      name: result.user.name,
+      email: result.user.email,
+      status: result.user.status,
+      isTrainer: true,
+      trainerProfile: result.profile,
+    },
+    'Trainer account created successfully and welcome email dispatched.',
+  );
+});
+
+const updateTrainerStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { isTrainer } = req.body;
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      userRoles: { include: { role: true } },
+      trainerProfile: true,
+    },
+  });
+
+  if (!user) throw ApiError.notFound('Trainer not found.');
+
+  const trainerRole = await prisma.roleModel.findUnique({ where: { name: 'TRAINER' } });
+
+  await prisma.$transaction(async (tx) => {
+    if (isTrainer) {
+      if (trainerRole) {
+        await tx.userRole.upsert({
+          where: { userId_roleId: { userId: user.id, roleId: trainerRole.id } },
+          create: { userId: user.id, roleId: trainerRole.id },
+          update: {},
+        });
+      }
+      if (user.trainerProfile) {
+        await tx.trainerProfile.update({
+          where: { userId: user.id },
+          data: { isApproved: true },
+        });
+      }
+    } else {
+      if (user.trainerProfile) {
+        await tx.trainerProfile.update({
+          where: { userId: user.id },
+          data: { isApproved: false },
+        });
+      }
+      await tx.trainerAssignment.updateMany({
+        where: { trainerId: user.id, active: true },
+        data: { active: false, unassignedAt: new Date() },
+      });
+    }
+  });
+
+  await addAudit({
+    actorId: req.user.id,
+    action: isTrainer ? 'TRAINER_PRIVILEGE_GRANTED' : 'TRAINER_PRIVILEGE_REVOKED',
+    entityType: 'User',
+    entityId: user.id,
+    ip: req.ip,
+  });
+
+  ok(res, { _id: user.id, isTrainer: Boolean(isTrainer) }, 'Trainer privilege updated successfully.');
+});
+
 module.exports = {
   getAdminStats,
   listUsers,
@@ -929,4 +1184,7 @@ module.exports = {
   listTrainerAssignments,
   createTrainerAssignment,
   deleteTrainerAssignment,
+  listTrainers,
+  createTrainer,
+  updateTrainerStatus,
 };
