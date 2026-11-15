@@ -37,15 +37,6 @@ const registerStudent = asyncHandler(async (req, res) => {
 });
 
 /**
- * POST /api/v1/auth/register/trainer (Dedicated Trainer Endpoint)
- */
-const registerTrainer = asyncHandler(async (req, res) => {
-  req.body.role = 'TRAINER';
-  const user = await authService.register(req.body);
-  return created(res, user, 'Trainer application submitted for review. A verification OTP has been sent to your email.');
-});
-
-/**
  * POST /api/v1/auth/login
  */
 const login = asyncHandler(async (req, res) => {
@@ -217,7 +208,6 @@ const verifyResetOtp = asyncHandler(async (req, res) => {
 module.exports = {
   register,
   registerStudent,
-  registerTrainer,
   login,
   logout,
   refresh,
