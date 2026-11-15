@@ -203,6 +203,7 @@ model Designation {
   internshipPlans   InternshipPlan[]
   assessmentConfigs AssessmentConfig[]
   scheduleTemplates ScheduleTemplate[]
+  projects          Project[]
 
   @@map("designations")
 }
@@ -220,8 +221,59 @@ model Domain {
 
   internshipPlans   InternshipPlan[]
   scheduleTemplates ScheduleTemplate[]
+  projects          Project[]
+  questions         DomainQuestion[]
 
   @@map("domains")
+}
+
+model DomainQuestion {
+  id           String   @id @default(uuid())
+  domainId     String
+  text         String
+  options      Json     @default("[]")
+  correctIndex Int      @default(0)
+  explanation  String?  @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  domain       Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+  @@map("domain_questions")
+}
+
+model Project {
+  id                 String        @id @default(uuid())
+  title              String
+  slug               String        @unique
+  domainId           String
+  designationId      String?
+  starterRepoUrl     String?       @default("")
+  appStarterRepoUrl  String?       @default("")
+  description        String?       @default("")
+  technologies       Json          @default("[]")
+  webTechStack       Json          @default("[]")
+  webDeliverables    String?       @default("")
+  appTechStack       Json          @default("[]")
+  appDeliverables    String?       @default("")
+  durationsSupported Json          @default("[1, 2, 3, 6]")
+  isDefault          Boolean       @default(false)
+  status             PublishStatus @default(PUBLISHED)
+  taskTemplates      Json?
+  createdBy          String?
+  updatedBy          String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  domain             Domain        @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  designation        Designation?  @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  enrollments        Enrollment[]  @relation("AssignedProject")
+
+  @@index([domainId])
+  @@index([designationId])
+  @@index([status])
+  @@map("projects")
 }
 
 model InternshipPlan {
@@ -349,6 +401,9 @@ model Enrollment {
   termsAcceptedVersion Int?
   progress             Json?
   certificateId        String?
+  projectId            String?
+  projectAssignedAt    DateTime?
+  track                String?          @default("web")
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   activatedAt          DateTime?
@@ -359,6 +414,7 @@ model Enrollment {
   plan               InternshipPlan    @relation(fields: [planId], references: [id])
   quote              Quote?            @relation(fields: [quoteId], references: [id])
   scheduleTemplate   ScheduleTemplate? @relation(fields: [scheduleTemplateId], references: [id])
+  project            Project?          @relation("AssignedProject", fields: [projectId], references: [id], onDelete: SetNull)
   payments           Payment[]
   taskProgress       TaskProgress[]
   termsAcceptances   TermsAcceptance[]
@@ -369,6 +425,7 @@ model Enrollment {
   @@index([userId])
   @@index([teamId])
   @@index([planId])
+  @@index([projectId])
   @@map("enrollments")
 }
 
