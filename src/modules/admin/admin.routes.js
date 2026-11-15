@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const adminController = require('./admin.controller');
 const adminCatalogController = require('./admin-catalog.controller');
+const adminProjectsController = require('./admin-projects.controller');
+const adminQuestionsController = require('./admin-questions.controller');
 const { authenticate, authorize } = require('../../common/guards');
 const { ROLES } = require('../../common/constants');
 const { validate } = require('../../common/pipes');
@@ -28,6 +30,23 @@ router.get('/domains', adminCatalogController.listAdminDomains);
 router.post('/domains', adminCatalogController.createDomain);
 router.put('/domains/:id', adminCatalogController.updateDomain);
 router.patch('/domains/:id/status', adminCatalogController.updateDomainStatus);
+router.get('/domains/:domainId/questions', adminQuestionsController.listDomainQuestions);
+router.post('/domains/:domainId/questions', adminQuestionsController.createDomainQuestion);
+router.put('/domains/:domainId/questions/:questionId', adminQuestionsController.updateDomainQuestion);
+router.delete('/domains/:domainId/questions/:questionId', adminQuestionsController.deleteDomainQuestion);
+
+// ─── Catalog: Projects ───────────────────────────────────────────────────────
+router.get('/projects', adminProjectsController.listAdminProjects);
+router.post('/projects', adminProjectsController.createProject);
+router.get('/projects/:id', adminProjectsController.getAdminProject);
+router.put('/projects/:id', adminProjectsController.updateProject);
+router.patch('/projects/:id/status', adminProjectsController.updateProjectStatus);
+router.delete('/projects/:id', adminProjectsController.deleteProject);
+
+// ─── Project Assignments ─────────────────────────────────────────────────────
+router.get('/project-assignments', adminProjectsController.listProjectAssignments);
+router.post('/project-assignments', adminProjectsController.assignProject);
+router.delete('/project-assignments/:enrollmentId', adminProjectsController.unassignProject);
 
 // ─── Catalog: Internship Plans ───────────────────────────────────────────────
 router.get('/internship-plans', adminCatalogController.listAdminPlans);
