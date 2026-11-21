@@ -104,122 +104,39 @@ async function seed() {
 
   // 1. Users
   console.log('Seeding demo users...');
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@demo.dev' },
-    update: {},
-    create: {
-      name: 'Vikram Singh',
-      email: 'admin@demo.dev',
-      passwordHash,
-      roles: ['ADMIN'],
-      status: 'ACTIVE',
-      emailVerified: true,
-    },
-  });
 
-  const trainer = await prisma.user.upsert({
-    where: { email: 'trainer@demo.dev' },
-    update: {},
-    create: {
-      name: 'Priya Nair',
-      email: 'trainer@demo.dev',
-      passwordHash,
-      roles: ['TRAINER'],
-      status: 'ACTIVE',
-      emailVerified: true,
-    },
-  });
+  async function upsertUser(name, email, roleName, status = 'ACTIVE', emailVerified = true) {
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: {},
+      create: {
+        name,
+        email,
+        passwordHash,
+        status,
+        emailVerified,
+      },
+    });
+    const role = await prisma.roleModel.findUnique({ where: { name: roleName } });
+    if (role) {
+      await prisma.userRole.upsert({
+        where: { userId_roleId: { userId: user.id, roleId: role.id } },
+        update: {},
+        create: { userId: user.id, roleId: role.id },
+      });
+    }
+    return user;
+  }
 
-  const student = await prisma.user.upsert({
-    where: { email: 'student@demo.dev' },
-    update: {},
-    create: {
-      name: 'Aarav Sharma',
-      email: 'student@demo.dev',
-      passwordHash,
-      roles: ['STUDENT'],
-      status: 'ACTIVE',
-      emailVerified: true,
-    },
-  });
-
-  const newStudent = await prisma.user.upsert({
-    where: { email: 'new.student@demo.dev' },
-    update: {},
-    create: {
-      name: 'Diya Patel',
-      email: 'new.student@demo.dev',
-      passwordHash,
-      roles: ['STUDENT'],
-      status: 'ACTIVE',
-      emailVerified: true,
-    },
-  });
-
-  const pendingStudent = await prisma.user.upsert({
-    where: { email: 'pending@demo.dev' },
-    update: {},
-    create: {
-      name: 'Kabir Mehta',
-      email: 'pending@demo.dev',
-      passwordHash,
-      roles: ['STUDENT'],
-      status: 'ACTIVE',
-      emailVerified: true,
-    },
-  });
-
-  const unverifiedStudent = await prisma.user.upsert({
-    where: { email: 'unverified@demo.dev' },
-    update: {},
-    create: {
-      name: 'Isha Reddy',
-      email: 'unverified@demo.dev',
-      passwordHash,
-      roles: ['STUDENT'],
-      status: 'PENDING_VERIFICATION',
-      emailVerified: false,
-    },
-  });
-
-  const graduateStudent = await prisma.user.upsert({
-    where: { email: 'graduate@demo.dev' },
-    update: {},
-    create: {
-      name: 'Meera Iyer',
-      email: 'graduate@demo.dev',
-      passwordHash,
-      roles: ['STUDENT'],
-      status: 'ACTIVE',
-      emailVerified: true,
-    },
-  });
-
-  const leaderStudent = await prisma.user.upsert({
-    where: { email: 'leader@demo.dev' },
-    update: {},
-    create: {
-      name: 'Rohan Gupta',
-      email: 'leader@demo.dev',
-      passwordHash,
-      roles: ['STUDENT'],
-      status: 'ACTIVE',
-      emailVerified: true,
-    },
-  });
-
-  const suspendedUser = await prisma.user.upsert({
-    where: { email: 'suspended@demo.dev' },
-    update: {},
-    create: {
-      name: 'Nikhil Verma',
-      email: 'suspended@demo.dev',
-      passwordHash,
-      roles: ['STUDENT'],
-      status: 'SUSPENDED',
-      emailVerified: true,
-    },
-  });
+  const admin = await upsertUser('Vikram Singh', 'admin@demo.dev', 'ADMIN');
+  const trainer = await upsertUser('Priya Nair', 'trainer@demo.dev', 'TRAINER');
+  const student = await upsertUser('Aarav Sharma', 'student@demo.dev', 'STUDENT');
+  const newStudent = await upsertUser('Diya Patel', 'new.student@demo.dev', 'STUDENT');
+  const pendingStudent = await upsertUser('Kabir Mehta', 'pending@demo.dev', 'STUDENT');
+  const unverifiedStudent = await upsertUser('Isha Reddy', 'unverified@demo.dev', 'STUDENT', 'PENDING_VERIFICATION', false);
+  const graduateStudent = await upsertUser('Meera Iyer', 'graduate@demo.dev', 'STUDENT');
+  const leaderStudent = await upsertUser('Rohan Gupta', 'leader@demo.dev', 'STUDENT');
+  const suspendedUser = await upsertUser('Nikhil Verma', 'suspended@demo.dev', 'STUDENT', 'SUSPENDED');
 
   // 2. Terms Versions
   console.log('Seeding terms...');

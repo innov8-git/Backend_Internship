@@ -151,6 +151,8 @@ model User {
   taskSubmissions    TaskSubmission[]    @relation("Submitter")
   reviews            Review[]            @relation("Reviewer")
 
+  @@index([status])
+  @@index([createdAt])
   @@map("users")
 }
 
@@ -224,6 +226,8 @@ model Domain {
   projects          Project[]
   questions         DomainQuestion[]
 
+  @@index([status])
+  @@index([createdAt])
   @@map("domains")
 }
 
@@ -426,6 +430,8 @@ model Enrollment {
   @@index([teamId])
   @@index([planId])
   @@index([projectId])
+  @@index([status])
+  @@index([createdAt])
   @@map("enrollments")
 }
 
@@ -450,6 +456,9 @@ model Payment {
 
   @@index([enrollmentId])
   @@index([userId])
+  @@index([status])
+  @@index([flagged])
+  @@index([createdAt])
   @@map("payments")
 }
 
