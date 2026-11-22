@@ -105,6 +105,30 @@ const getMe = asyncHandler(async (req, res) => {
 });
 
 /**
+ * PATCH /api/v1/auth/me — update own profile
+ */
+const updateMe = asyncHandler(async (req, res) => {
+  const user = await authService.updateMe(req.user.id, req.body);
+  return ok(res, user, 'Profile updated.');
+});
+
+/**
+ * POST /api/v1/auth/google — sign in / sign up with a Google ID token or code
+ */
+const loginWithGoogle = asyncHandler(async (req, res) => {
+  const metadata = {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+  const { user, accessToken, rawRefreshToken } = await authService.loginWithGoogle(req.body, metadata);
+
+  setRefreshTokenCookie(res, rawRefreshToken);
+  logger.info(`[GoogleLogin] Refresh token cookie set for user: ${user.email}`);
+
+  return ok(res, { user, accessToken }, 'Login successful.');
+});
+
+/**
  * POST /api/v1/auth/forgot-password
  */
 const forgotPassword = asyncHandler(async (req, res) => {
@@ -212,6 +236,8 @@ module.exports = {
   logout,
   refresh,
   getMe,
+  updateMe,
+  loginWithGoogle,
   forgotPassword,
   resetPassword,
   verifyEmail,

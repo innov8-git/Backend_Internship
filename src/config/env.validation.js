@@ -40,7 +40,11 @@ const envSchema = Joi.object({
   // File upload
   MAX_FILE_SIZE: Joi.number().default(5242880), // 5 MB
   UPLOAD_DIR: Joi.string().default('./public/uploads'),
-  STORAGE_PROVIDER: Joi.string().valid('local', 's3', 'gcs').default('local'),
+  STORAGE_PROVIDER: Joi.string().valid('local', 'cloudinary', 's3', 'gcs').default('local'),
+  CLOUDINARY_CLOUD_NAME: Joi.string().allow('').default(''),
+  CLOUDINARY_API_KEY: Joi.string().allow('').default(''),
+  CLOUDINARY_API_SECRET: Joi.string().allow('').default(''),
+  CLOUDINARY_FOLDER: Joi.string().default('internship-portal'),
   AWS_ACCESS_KEY_ID: Joi.string().allow('').default(''),
   AWS_SECRET_ACCESS_KEY: Joi.string().allow('').default(''),
   AWS_REGION: Joi.string().default('ap-south-1'),
@@ -59,6 +63,10 @@ const envSchema = Joi.object({
   GITHUB_CLIENT_ID: Joi.string().allow('').default(''),
   GITHUB_CLIENT_SECRET: Joi.string().allow('').default(''),
   GITHUB_CALLBACK_URL: Joi.string().default('http://localhost:5173/github/callback'),
+
+  // Google sign-in (must match the frontend's VITE_GOOGLE_CLIENT_ID)
+  GOOGLE_CLIENT_ID: Joi.string().allow('').default(''),
+  GOOGLE_CLIENT_SECRET: Joi.string().allow('').default(''),
 
   // Logging
   LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'debug', 'verbose').default('debug'),

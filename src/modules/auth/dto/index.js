@@ -14,8 +14,12 @@ const {
   loginOtpSchema,
   verifyResetOtpSchema,
 } = require('./otp.dto');
+const { updateMeSchema } = require('./update-me.dto');
+const { googleLoginSchema } = require('./google-login.dto');
 
 module.exports = {
+  updateMeSchema,
+  googleLoginSchema,
   registerSchema,
   registerStudentSchema,
   loginSchema,

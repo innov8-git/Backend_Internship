@@ -69,6 +69,7 @@ class TokenService {
       include: {
         user: {
           include: {
+            trainerProfile: true,
             userRoles: {
               include: {
                 role: {
@@ -125,6 +126,7 @@ class TokenService {
           accessToken,
           newRawRefreshToken: null,
           user: {
+            _id: existingToken.user.id,
             id: existingToken.user.id,
             name: existingToken.user.name,
             email: existingToken.user.email,
@@ -132,6 +134,22 @@ class TokenService {
             emailVerified: existingToken.user.emailVerified,
             roles,
             permissions: Array.from(permissionSet),
+            avatarUrl: existingToken.user.avatarUrl ?? null,
+            phone: existingToken.user.phone ?? null,
+            headline: existingToken.user.headline ?? null,
+            bio: existingToken.user.bio ?? null,
+            location: existingToken.user.location ?? null,
+            college: existingToken.user.college ?? null,
+            degree: existingToken.user.degree ?? null,
+            graduationYear: existingToken.user.graduationYear ?? null,
+            department: existingToken.user.department ?? null,
+            organization: existingToken.user.organization ?? null,
+            linkedinUrl: existingToken.user.linkedinUrl ?? null,
+            portfolioUrl: existingToken.user.portfolioUrl ?? null,
+            authProvider: existingToken.user.authProvider,
+            trainerProfile: existingToken.user.trainerProfile || null,
+            createdAt: existingToken.user.createdAt,
+            updatedAt: existingToken.user.updatedAt,
           },
         };
       }
@@ -211,6 +229,7 @@ class TokenService {
       accessToken,
       newRawRefreshToken,
       user: {
+        _id: user.id,
         id: user.id,
         name: user.name,
         email: user.email,
@@ -218,6 +237,22 @@ class TokenService {
         emailVerified: user.emailVerified,
         roles,
         permissions: Array.from(permissionSet),
+        avatarUrl: user.avatarUrl ?? null,
+        phone: user.phone ?? null,
+        headline: user.headline ?? null,
+        bio: user.bio ?? null,
+        location: user.location ?? null,
+        college: user.college ?? null,
+        degree: user.degree ?? null,
+        graduationYear: user.graduationYear ?? null,
+        department: user.department ?? null,
+        organization: user.organization ?? null,
+        linkedinUrl: user.linkedinUrl ?? null,
+        portfolioUrl: user.portfolioUrl ?? null,
+        authProvider: user.authProvider,
+        trainerProfile: user.trainerProfile || null,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
       },
     };
   }

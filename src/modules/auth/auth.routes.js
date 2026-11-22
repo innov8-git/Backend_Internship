@@ -16,6 +16,8 @@ const {
   verifyRegistrationOtpSchema,
   loginOtpSchema,
   verifyResetOtpSchema,
+  updateMeSchema,
+  googleLoginSchema,
 } = require('./dto');
 
 const router = Router();
@@ -45,6 +47,13 @@ router.post(
 router.post(
   '/logout',
   authController.logout,
+);
+
+router.post(
+  '/google',
+  createLoginLimiter(),
+  validate(googleLoginSchema),
+  authController.loginWithGoogle,
 );
 
 router.post(
@@ -132,6 +141,13 @@ router.get(
   '/me',
   authenticate,
   authController.getMe,
+);
+
+router.patch(
+  '/me',
+  authenticate,
+  validate(updateMeSchema),
+  authController.updateMe,
 );
 
 module.exports = router;
