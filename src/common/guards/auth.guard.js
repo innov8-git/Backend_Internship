@@ -5,6 +5,63 @@ const { ApiError, verifyAccessToken } = require('../../utils');
 const { USER_STATUS } = require('../constants');
 
 /**
+ * In-memory short-TTL cache for authenticated users and their RBAC permissions.
+ * Prevents repeating the heavy 4-table join on every concurrent/subsequent request.
+ */
+const AUTH_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+const userAuthCache = new Map();
+
+function invalidateAuthUserCache(userId) {
+  if (userId) {
+    userAuthCache.delete(userId);
+  } else {
+    userAuthCache.clear();
+  }
+}
+
+async function loadUserWithRolesAndPermissions(userId) {
+  const cached = userAuthCache.get(userId);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      status: true,
+      emailVerified: true,
+      createdAt: true,
+      updatedAt: true,
+      userRoles: {
+        include: {
+          role: {
+            include: {
+              rolePermissions: {
+                include: {
+                  permission: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (user) {
+    userAuthCache.set(userId, {
+      data: user,
+      expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+    });
+  }
+
+  return user;
+}
+
+/**
  * Authentication Middleware
  * Validates Bearer access token, retrieves user, status, roles and granular permissions.
  */
@@ -31,32 +88,8 @@ function authenticate(req, _res, next) {
       throw ApiError.unauthorized('UNAUTHENTICATED', 'Malformed authentication token.');
     }
 
-    // Load user and related roles + permissions
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        status: true,
-        emailVerified: true,
-        createdAt: true,
-        updatedAt: true,
-        userRoles: {
-          include: {
-            role: {
-              include: {
-                rolePermissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+    // Load user and related roles + permissions (uses in-memory cache)
+    const user = await loadUserWithRolesAndPermissions(userId);
 
     if (!user) {
       throw ApiError.unauthorized('UNAUTHENTICATED', 'User no longer exists.');
@@ -116,29 +149,7 @@ function optionalAuth(req, _res, next) {
       const payload = verifyAccessToken(token);
       const userId = payload.sub || payload.userId;
 
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          status: true,
-          emailVerified: true,
-          userRoles: {
-            include: {
-              role: {
-                include: {
-                  rolePermissions: {
-                    include: {
-                      permission: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      });
+      const user = await loadUserWithRolesAndPermissions(userId);
 
       if (user && user.status !== USER_STATUS.SUSPENDED) {
         const roles = [];
@@ -171,5 +182,5 @@ function optionalAuth(req, _res, next) {
 module.exports = {
   authenticate,
   optionalAuth,
+  invalidateAuthUserCache,
 };
-

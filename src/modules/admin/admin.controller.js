@@ -24,15 +24,21 @@ const {
 } = require('../../common/constants');
 const { addAudit } = require('../audit-log/audit-log.service');
 const { sendCertificateIssuedEmail, sendTrainerWelcomeEmail } = require('../../libs/email');
+const { invalidateAuthUserCache } = require('../../common/guards');
 const logger = require('../../libs/logger');
 
 function userDto(user) {
   if (!user) return null;
+  const roles =
+    user.roles ||
+    (Array.isArray(user.userRoles)
+      ? user.userRoles.map((ur) => ur.role?.name).filter(Boolean)
+      : []);
   return {
     _id: user.id,
     name: user.name,
     email: user.email,
-    roles: user.roles,
+    roles,
     status: user.status,
     emailVerified: user.emailVerified,
     createdAt: user.createdAt,
@@ -46,22 +52,30 @@ const getAdminStats = asyncHandler(async (_req, res) => {
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  const users = await prisma.user.findMany({ select: { roles: true, status: true } });
-  const enrollments = await prisma.enrollment.findMany({
-    select: {
-      status: true,
-      plan: { include: { designation: { select: { name: true } } } },
-    },
-  });
-  const payments = await prisma.payment.findMany({
-    select: { amount: true, status: true, flagged: true, createdAt: true, updatedAt: true },
-  });
-  const certificates = await prisma.certificate.findMany({
-    select: { status: true, emailStatus: true },
-  });
-  const pendingSubmissions = await prisma.taskSubmission.count({
-    where: { reviewStatus: REVIEW_STATUS.PENDING },
-  });
+  // Run all aggregate/list queries in parallel across the connection pool
+  const [users, enrollments, payments, certificates, pendingSubmissions] = await Promise.all([
+    prisma.user.findMany({
+      select: {
+        status: true,
+        userRoles: { select: { role: { select: { name: true } } } },
+      },
+    }),
+    prisma.enrollment.findMany({
+      select: {
+        status: true,
+        plan: { select: { designation: { select: { name: true } } } },
+      },
+    }),
+    prisma.payment.findMany({
+      select: { amount: true, status: true, flagged: true, createdAt: true, updatedAt: true },
+    }),
+    prisma.certificate.findMany({
+      select: { status: true, emailStatus: true },
+    }),
+    prisma.taskSubmission.count({
+      where: { reviewStatus: REVIEW_STATUS.PENDING },
+    }),
+  ]);
 
   const successfulPayments = payments.filter((p) => p.status === PAYMENT_STATUS.SUCCESS);
   const totalRevenue = successfulPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -99,12 +113,15 @@ const getAdminStats = asyncHandler(async (_req, res) => {
     .map(([designation, count]) => ({ designation, count }))
     .sort((a, b) => b.count - a.count || a.designation.localeCompare(b.designation));
 
+  const hasRole = (u, roleName) =>
+    Array.isArray(u.userRoles) && u.userRoles.some((ur) => ur.role?.name === roleName);
+
   ok(res, {
     users: {
       total: users.length,
-      students: users.filter((u) => u.roles.includes(ROLES.STUDENT)).length,
-      trainers: users.filter((u) => u.roles.includes(ROLES.TRAINER)).length,
-      admins: users.filter((u) => u.roles.includes(ROLES.ADMIN)).length,
+      students: users.filter((u) => hasRole(u, ROLES.STUDENT)).length,
+      trainers: users.filter((u) => hasRole(u, ROLES.TRAINER)).length,
+      admins: users.filter((u) => hasRole(u, ROLES.ADMIN)).length,
       suspended: users.filter((u) => u.status === USER_STATUS.SUSPENDED).length,
     },
     enrollments: {
@@ -147,7 +164,15 @@ const listUsers = asyncHandler(async (req, res) => {
 
   const where = {
     ...(status && { status }),
-    ...(role && { roles: { has: role } }),
+    ...(role && {
+      userRoles: {
+        some: {
+          role: {
+            name: role,
+          },
+        },
+      },
+    }),
     ...(search && {
       OR: [
         { name: { contains: String(search), mode: 'insensitive' } },
@@ -160,6 +185,13 @@ const listUsers = asyncHandler(async (req, res) => {
     prisma.user.count({ where }),
     prisma.user.findMany({
       where,
+      include: {
+        userRoles: {
+          include: {
+            role: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
@@ -182,7 +214,14 @@ const updateUserRoles = asyncHandler(async (req, res) => {
     throw ApiError.validationError([{ field: 'roles', message: `Invalid role: ${invalidRole}` }]);
   }
 
-  const targetUser = await prisma.user.findUnique({ where: { id } });
+  const targetUser = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
+  });
   if (!targetUser) throw ApiError.notFound('User not found.');
 
   // Admin cannot remove their own ADMIN role
@@ -190,18 +229,44 @@ const updateUserRoles = asyncHandler(async (req, res) => {
     throw ApiError.forbidden('FORBIDDEN', 'You cannot remove your own administrator role.');
   }
 
-  const updated = await prisma.user.update({
-    where: { id },
-    data: { roles },
+  // Find Role records for the requested role names
+  const roleRecords = await prisma.roleModel.findMany({
+    where: { name: { in: roles } },
   });
+
+  // Sync userRoles in a transaction
+  await prisma.$transaction([
+    prisma.userRole.deleteMany({ where: { userId: id } }),
+    prisma.userRole.createMany({
+      data: roleRecords.map((r) => ({
+        userId: id,
+        roleId: r.id,
+      })),
+    }),
+  ]);
+
+  // Invalidate cached auth permissions for this user
+  invalidateAuthUserCache(id);
+
+  const updated = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
+  });
+
+  const previousRoles = targetUser.userRoles.map((ur) => ur.role?.name).filter(Boolean);
+  const nextRoles = updated.userRoles.map((ur) => ur.role?.name).filter(Boolean);
 
   await addAudit({
     actorId: req.user.id,
     action: 'USER_ROLES_UPDATED',
     entityType: 'User',
     entityId: updated.id,
-    before: { roles: targetUser.roles },
-    after: { roles: updated.roles },
+    before: { roles: previousRoles },
+    after: { roles: nextRoles },
     ip: req.ip,
   });
 
@@ -218,7 +283,14 @@ const updateUserStatus = asyncHandler(async (req, res) => {
     ]);
   }
 
-  const targetUser = await prisma.user.findUnique({ where: { id } });
+  const targetUser = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
+  });
   if (!targetUser) throw ApiError.notFound('User not found.');
 
   if (targetUser.id === req.user.id) {
@@ -228,7 +300,15 @@ const updateUserStatus = asyncHandler(async (req, res) => {
   const updated = await prisma.user.update({
     where: { id },
     data: { status },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
   });
+
+  // Invalidate auth cache so the status change takes effect immediately
+  invalidateAuthUserCache(id);
 
   await addAudit({
     actorId: req.user.id,
@@ -812,8 +892,16 @@ const createTrainerAssignment = asyncHandler(async (req, res) => {
   }
   if (details.length > 0) throw ApiError.validationError(details);
 
-  const trainer = await prisma.user.findUnique({ where: { id: trainerId } });
-  if (!trainer || !trainer.roles.includes(ROLES.TRAINER)) {
+  const trainer = await prisma.user.findUnique({
+    where: { id: trainerId },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
+  });
+  const isTrainer = trainer && trainer.userRoles.some((ur) => ur.role?.name === ROLES.TRAINER);
+  if (!isTrainer) {
     throw ApiError.validationError([{ field: 'trainerId', message: 'User is not a trainer.' }]);
   }
 
