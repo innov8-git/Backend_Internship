@@ -187,6 +187,7 @@ const createProject = asyncHandler(async (req, res) => {
     durationsSupported,
     isDefault,
     status,
+    taskTemplates,
   } = req.body;
 
   const details = [];
@@ -250,6 +251,7 @@ const createProject = asyncHandler(async (req, res) => {
           : [1, 2, 3, 6],
       isDefault: Boolean(isDefault),
       status: status === PUBLISH_STATUS.DRAFT ? PUBLISH_STATUS.DRAFT : PUBLISH_STATUS.PUBLISHED,
+      taskTemplates: taskTemplates !== undefined ? taskTemplates : null,
       createdBy: req.user.id,
       updatedBy: req.user.id,
     },
@@ -301,6 +303,7 @@ const updateProject = asyncHandler(async (req, res) => {
     durationsSupported,
     isDefault,
     status,
+    taskTemplates,
   } = req.body;
 
   const details = [];
@@ -370,6 +373,7 @@ const updateProject = asyncHandler(async (req, res) => {
           : current.durationsSupported,
       isDefault: isDefault !== undefined ? Boolean(isDefault) : current.isDefault,
       status: status !== undefined ? status : current.status,
+      taskTemplates: taskTemplates !== undefined ? taskTemplates : current.taskTemplates,
       updatedBy: req.user.id,
     },
     include: {
