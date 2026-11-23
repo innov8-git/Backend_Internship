@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('crypto');
 const otpService = require('../../../modules/auth/services/otp.service');
 const { prisma } = require('../../../database');
 const { hashToken } = require('../../../utils');

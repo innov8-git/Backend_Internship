@@ -9,7 +9,6 @@ const {
 } = require('../../utils');
 const {
   ROLES,
-  USER_STATUS,
   PUBLISH_STATUS,
   SCHEDULE_STATUS,
   ENROLLMENT_STATUS,

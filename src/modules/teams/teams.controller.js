@@ -12,9 +12,7 @@ const {
   TEAM_STATUS,
   MEMBER_STATUS,
   PUBLISH_STATUS,
-  TASK_STATUS,
   PAYMENT_STATUS,
-  ENROLLMENT_STATUS,
 } = require('../../common/constants');
 const { sendTeamInviteEmail } = require('../../libs/email');
 const logger = require('../../libs/logger');

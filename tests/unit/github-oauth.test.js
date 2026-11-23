@@ -1,6 +1,8 @@
 'use strict';
 
 process.env.NODE_ENV = 'test';
+process.env.GITHUB_CLIENT_ID = 'test-github-client-id';
+process.env.GITHUB_CLIENT_SECRET = 'test-github-client-secret';
 
 const mockPrisma = {
   user: { findUnique: jest.fn() },

@@ -27,11 +27,7 @@ const {
   setRefreshCookie,
   clearRefreshCookie,
 } = require('./token.util');
-const {
-  setRefreshTokenCookie: setCookie,
-  clearRefreshTokenCookie: clearCookie,
-} = require('./cookie.util');
-const { slugify, uniqueSlug } = require('./slug.util');
+const { slugify, uniqueSlug, generateSlug } = require('./slug.util');
 
 /**
  * Wrap an async route handler so thrown errors are caught and forwarded to Express.
@@ -106,5 +102,6 @@ module.exports = {
 
   // Slug
   slugify,
+  generateSlug,
   uniqueSlug,
 };

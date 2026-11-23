@@ -8,7 +8,6 @@ const {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
   getRefreshTokenFromRequest,
-  REFRESH_TOKEN_COOKIE_NAME,
   ok,
   created,
   ApiError,
