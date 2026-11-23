@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const { prisma } = require('../../../database');
 const { ApiError, hashPassword, comparePassword } = require('../../../utils');
 const tokenService = require('./token.service');
-const rbacService = require('./rbac.service');
 const logger = require('../../../libs/logger');
 const otpService = require('./otp.service');
 const googleAuthService = require('./google-auth.service');

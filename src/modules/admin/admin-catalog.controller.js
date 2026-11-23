@@ -24,8 +24,6 @@ const DESCRIPTION_MIN = 10;
 const DESCRIPTION_MAX = 500;
 const MAX_BASE_PRICE = 100000000; // 10 lakh rupees in paise
 const MAX_SLABS = 16;
-const QUESTION_TEXT_MAX = 1000;
-const OPTION_TEXT_MAX = 300;
 const ASSESSMENT_MAX_SCORE = 15;
 
 function cleanText(v) {
@@ -780,7 +778,6 @@ function parseDraftInput(body) {
     });
   } else {
     body.questions.forEach((raw, i) => {
-      const field = `questions[${i}]`;
       const text = typeof raw?.text === 'string' ? raw.text.trim() : '';
       const options = Array.isArray(raw?.options)
         ? raw.options.map((o) => (typeof o === 'string' ? o.trim() : ''))

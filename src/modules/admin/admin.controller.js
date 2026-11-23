@@ -7,7 +7,6 @@ const {
   created,
   noContent,
   parsePagination,
-  parseSort,
   paginatedResponse,
   hashPassword,
 } = require('../../utils');
@@ -21,6 +20,7 @@ const {
   EMAIL_STATUS,
   REVIEW_STATUS,
   TEAM_STATUS,
+  TASK_STATUS,
 } = require('../../common/constants');
 const { addAudit } = require('../audit-log/audit-log.service');
 const { sendCertificateIssuedEmail, sendTrainerWelcomeEmail } = require('../../libs/email');
@@ -1314,6 +1314,7 @@ const createTrainer = asyncHandler(async (req, res) => {
       data: {
         name: name.trim(),
         email: normalizedEmail,
+        phone: phone ? phone.trim() : null,
         passwordHash,
         status: 'ACTIVE',
         emailVerified: true,
