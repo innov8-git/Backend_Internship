@@ -300,6 +300,145 @@ const swaggerDefinition = {
           401: { description: 'Unauthenticated' },
         },
       },
+      patch: {
+        summary: 'Update Own Profile',
+        description:
+          'Partial update of the signed-in user profile. email, roles, status and password cannot be changed here. trainerProfile is only applied for trainers.',
+        tags: ['Authentication'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  avatarUrl: { type: 'string', nullable: true, description: 'https URL or data:image/...;base64 (max 5 MB)' },
+                  phone: { type: 'string' },
+                  headline: { type: 'string' },
+                  bio: { type: 'string' },
+                  location: { type: 'string' },
+                  college: { type: 'string' },
+                  degree: { type: 'string' },
+                  graduationYear: { type: 'string' },
+                  department: { type: 'string' },
+                  organization: { type: 'string' },
+                  linkedinUrl: { type: 'string' },
+                  portfolioUrl: { type: 'string' },
+                  trainerProfile: {
+                    type: 'object',
+                    properties: {
+                      domain: { type: 'string' },
+                      experience: { type: 'string' },
+                      organization: { type: 'string' },
+                      linkedinUrl: { type: 'string' },
+                      resumeName: { type: 'string' },
+                      resumeSize: { type: 'integer' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Updated user profile' },
+          401: { description: 'Unauthenticated' },
+          422: { description: 'Validation failed' },
+        },
+      },
+    },
+    '/auth/google': {
+      post: {
+        summary: 'Sign In With Google',
+        description:
+          'Verifies a Google Identity Services ID token (credential) or exchanges an auth code. Creates an ACTIVE student account on first sign-in and sets the refresh cookie.',
+        tags: ['Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { credential: { type: 'string' }, code: { type: 'string' } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: '{ user, accessToken } + httpOnly refresh cookie' },
+          401: { description: 'INVALID_GOOGLE_TOKEN' },
+          403: { description: 'ACCOUNT_SUSPENDED' },
+        },
+      },
+    },
+    '/admin/users/{id}/trainer': {
+      patch: {
+        summary: "Change / Remove a Student's Trainer",
+        tags: ['Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { trainerId: { type: 'string' }, unassign: { type: 'boolean' } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: '{ success, assignment }' },
+          404: { description: 'User not found' },
+          422: { description: 'NO_ACTIVE_ENROLLMENT or validation failed' },
+        },
+      },
+    },
+    '/admin/trainers/{id}/assignments': {
+      get: {
+        summary: "List a Trainer's Active Assignments",
+        tags: ['Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: '{ items, total }' }, 404: { description: 'Trainer not found' } },
+      },
+      post: {
+        summary: 'Assign a Student Enrollment or Team to a Trainer',
+        tags: ['Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { enrollmentId: { type: 'string' }, teamId: { type: 'string' } },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Assignment created' },
+          409: { description: 'DUPLICATE_ASSIGNMENT' },
+          422: { description: 'Validation failed / not a trainer' },
+        },
+      },
+    },
+    '/admin/trainers/{trainerId}/assignments/{assignmentId}': {
+      delete: {
+        summary: 'Remove a Trainer Assignment',
+        tags: ['Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'trainerId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'assignmentId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: { 200: { description: '{ success: true }' }, 404: { description: 'Assignment not found' } },
+      },
     },
     '/auth/forgot-password': {
       post: {

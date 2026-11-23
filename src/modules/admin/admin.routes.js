@@ -64,6 +64,7 @@ router.patch('/assessments/:designationId/publish', adminCatalogController.publi
 router.get('/users', adminController.listUsers);
 router.patch('/users/:id/roles', adminController.updateUserRoles);
 router.patch('/users/:id/status', adminController.updateUserStatus);
+router.patch('/users/:id/trainer', adminController.updateStudentTrainer);
 
 // ─── Enrollments ─────────────────────────────────────────────────────────────
 router.get('/enrollments', adminController.listAdminEnrollments);
@@ -92,5 +93,8 @@ router.delete('/trainer-assignments/:id', adminController.deleteTrainerAssignmen
 router.get('/trainers', adminController.listTrainers);
 router.post('/trainers', validate(createTrainerSchema), adminController.createTrainer);
 router.patch('/trainers/:id', validate(updateTrainerPrivilegeSchema), adminController.updateTrainerStatus);
+router.get('/trainers/:id/assignments', adminController.listTrainerAssignmentsForTrainer);
+router.post('/trainers/:id/assignments', adminController.assignToTrainer);
+router.delete('/trainers/:trainerId/assignments/:assignmentId', adminController.removeTrainerAssignmentForTrainer);
 
 module.exports = router;

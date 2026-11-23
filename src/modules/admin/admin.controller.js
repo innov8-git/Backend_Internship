@@ -880,9 +880,13 @@ const listTrainerAssignments = asyncHandler(async (req, res) => {
   ok(res, paginatedResponse(rows, total, page, limit));
 });
 
-const createTrainerAssignment = asyncHandler(async (req, res) => {
-  const { trainerId, enrollmentId, teamId } = req.body;
-
+/**
+ * Shared trainer-assignment logic used by POST /admin/trainer-assignments,
+ * POST /admin/trainers/:id/assignments and PATCH /admin/users/:id/trainer.
+ * Validates the trainer + target, deactivates the target's previous active
+ * assignment (history is kept), creates the new one and writes an audit entry.
+ */
+async function assignTrainerToTarget({ trainerId, enrollmentId, teamId, actorId, ip, rejectDuplicate = false }) {
   const details = [];
   if (!trainerId) details.push({ field: 'trainerId', message: 'Choose a trainer.' });
   if (!enrollmentId && !teamId) {
@@ -915,6 +919,19 @@ const createTrainerAssignment = asyncHandler(async (req, res) => {
     if (!t) throw ApiError.validationError([{ field: 'teamId', message: 'That team no longer exists.' }]);
     if (t.status === TEAM_STATUS.DISBANDED) {
       throw ApiError.validationError([{ field: 'teamId', message: "This team was disbanded, so it can't get a trainer." }]);
+    }
+  }
+
+  if (rejectDuplicate) {
+    const existing = await prisma.trainerAssignment.findFirst({
+      where: {
+        trainerId,
+        active: true,
+        ...(enrollmentId ? { enrollmentId } : { teamId }),
+      },
+    });
+    if (existing) {
+      throw ApiError.conflict('DUPLICATE_ASSIGNMENT', 'This trainer is already assigned to that target.');
     }
   }
 
@@ -958,15 +975,15 @@ const createTrainerAssignment = asyncHandler(async (req, res) => {
   });
 
   await addAudit({
-    actorId: req.user.id,
+    actorId,
     action: 'TRAINER_ASSIGNED',
     entityType: 'TrainerAssignment',
     entityId: assignment.id,
     after: { trainerId, enrollmentId, teamId },
-    ip: req.ip,
+    ip,
   });
 
-  created(res, {
+  return {
     _id: assignment.id,
     trainerId: assignment.trainerId,
     trainer: assignment.trainer ? { _id: assignment.trainer.id, name: assignment.trainer.name, email: assignment.trainer.email } : null,
@@ -975,7 +992,164 @@ const createTrainerAssignment = asyncHandler(async (req, res) => {
     teamId: assignment.teamId,
     active: assignment.active,
     assignedAt: assignment.assignedAt,
+  };
+}
+
+const createTrainerAssignment = asyncHandler(async (req, res) => {
+  const { trainerId, enrollmentId, teamId } = req.body;
+  const dto = await assignTrainerToTarget({
+    trainerId,
+    enrollmentId,
+    teamId,
+    actorId: req.user.id,
+    ip: req.ip,
   });
+  created(res, dto);
+});
+
+/**
+ * GET /admin/trainers/:id/assignments
+ * Active assignments of one trainer (students and teams).
+ */
+const listTrainerAssignmentsForTrainer = asyncHandler(async (req, res) => {
+  const trainerId = req.params.id;
+  const trainer = await prisma.user.findUnique({ where: { id: trainerId }, select: { id: true } });
+  if (!trainer) throw ApiError.notFound('Trainer');
+
+  const assignments = await prisma.trainerAssignment.findMany({
+    where: { trainerId, active: true },
+    include: {
+      enrollment: { include: { user: { select: { id: true, name: true, email: true } } } },
+      team: { select: { id: true, name: true } },
+    },
+    orderBy: { assignedAt: 'desc' },
+  });
+
+  const items = assignments.map((a) => {
+    const student = a.enrollment?.user;
+    return {
+      _id: a.id,
+      enrollmentId: a.enrollmentId ?? null,
+      teamId: a.teamId ?? null,
+      student: student ? { _id: student.id, name: student.name, email: student.email } : null,
+      teamName: a.team?.name ?? null,
+      assignedAt: a.assignedAt,
+    };
+  });
+
+  ok(res, { items, total: items.length });
+});
+
+/**
+ * POST /admin/trainers/:id/assignments  body: { enrollmentId } | { teamId }
+ */
+const assignToTrainer = asyncHandler(async (req, res) => {
+  const { enrollmentId, teamId } = req.body || {};
+  const dto = await assignTrainerToTarget({
+    trainerId: req.params.id,
+    enrollmentId,
+    teamId,
+    actorId: req.user.id,
+    ip: req.ip,
+    rejectDuplicate: true,
+  });
+  created(res, dto);
+});
+
+/**
+ * DELETE /admin/trainers/:trainerId/assignments/:assignmentId
+ * Soft-deactivates the assignment (history is kept).
+ */
+const removeTrainerAssignmentForTrainer = asyncHandler(async (req, res) => {
+  const { trainerId, assignmentId } = req.params;
+
+  const assignment = await prisma.trainerAssignment.findUnique({ where: { id: assignmentId } });
+  if (!assignment || assignment.trainerId !== trainerId) throw ApiError.notFound('Assignment');
+
+  if (assignment.active) {
+    await prisma.trainerAssignment.update({
+      where: { id: assignmentId },
+      data: { active: false, unassignedAt: new Date() },
+    });
+    await addAudit({
+      actorId: req.user.id,
+      action: 'TRAINER_UNASSIGNED',
+      entityType: 'TrainerAssignment',
+      entityId: assignment.id,
+      before: { trainerId, enrollmentId: assignment.enrollmentId, teamId: assignment.teamId },
+      ip: req.ip,
+    });
+  }
+
+  ok(res, { success: true });
+});
+
+/**
+ * PATCH /admin/users/:id/trainer  body: { trainerId?, unassign? }
+ * Changes, assigns or removes the trainer of a student's current individual enrollment.
+ */
+const updateStudentTrainer = asyncHandler(async (req, res) => {
+  const studentId = req.params.id;
+  const { trainerId, unassign } = req.body || {};
+  const isUnassign = unassign === true || unassign === 'true';
+
+  if (!isUnassign && !trainerId) {
+    throw ApiError.validationError([{ field: 'trainerId', message: 'Choose a trainer.' }]);
+  }
+
+  const student = await prisma.user.findUnique({ where: { id: studentId }, select: { id: true } });
+  if (!student) throw ApiError.notFound('User');
+
+  const enrollments = await prisma.enrollment.findMany({
+    where: { userId: studentId },
+    select: { id: true, status: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  const enrollmentIds = enrollments.map((e) => e.id);
+
+  if (isUnassign) {
+    const { count } = await prisma.trainerAssignment.updateMany({
+      where: { active: true, enrollmentId: { in: enrollmentIds } },
+      data: { active: false, unassignedAt: new Date() },
+    });
+    if (count > 0) {
+      await addAudit({
+        actorId: req.user.id,
+        action: 'TRAINER_UNASSIGNED',
+        entityType: 'User',
+        entityId: studentId,
+        before: { enrollmentIds },
+        ip: req.ip,
+      });
+    }
+    return ok(res, { success: true, assignment: null });
+  }
+
+  const preferred = [ENROLLMENT_STATUS.IN_PROGRESS, ENROLLMENT_STATUS.ACTIVE];
+  const current =
+    enrollments.find((e) => preferred.includes(e.status)) ||
+    enrollments.find((e) => e.status !== ENROLLMENT_STATUS.CANCELLED);
+  if (!current) {
+    throw ApiError.unprocessable(
+      'NO_ACTIVE_ENROLLMENT',
+      'This student has no enrollment yet, so a trainer cannot be assigned.',
+    );
+  }
+
+  // Close assignments on the student's other enrollments; the helper closes the current one.
+  await prisma.trainerAssignment.updateMany({
+    where: { active: true, enrollmentId: { in: enrollmentIds.filter((id) => id !== current.id) } },
+    data: { active: false, unassignedAt: new Date() },
+  });
+
+  const assignment = await assignTrainerToTarget({
+    trainerId,
+    enrollmentId: current.id,
+    actorId: req.user.id,
+    ip: req.ip,
+  });
+
+  ok(res, { success: true, assignment });
 });
 
 const deleteTrainerAssignment = asyncHandler(async (req, res) => {
@@ -1272,6 +1446,10 @@ module.exports = {
   listTrainerAssignments,
   createTrainerAssignment,
   deleteTrainerAssignment,
+  listTrainerAssignmentsForTrainer,
+  assignToTrainer,
+  removeTrainerAssignmentForTrainer,
+  updateStudentTrainer,
   listTrainers,
   createTrainer,
   updateTrainerStatus,

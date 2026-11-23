@@ -1,12 +1,15 @@
+'use strict';
+
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../logger');
 
 /**
  * Abstract storage provider interface.
- * Implementations: LocalStorage, S3Storage, GCSStorage.
- * The active provider is selected by STORAGE_PROVIDER env var.
+ * Implementations: LocalStorage, CloudinaryStorage, S3Storage, GCSStorage.
+ * Active provider is selected by STORAGE_PROVIDER env var ('local' | 'cloudinary' | 's3' | 'gcs').
  */
 
 // ─── Local file storage ─────────────────────────────────────────────────────
@@ -20,10 +23,10 @@ class LocalStorage {
   }
 
   /**
-   * Save a file buffer or stream to local disk.
-   * @param {Buffer} buffer - file content
-   * @param {string} originalName - original filename
-   * @param {string} mimeType - MIME type
+   * Save a file buffer to local disk.
+   * @param {Buffer} buffer
+   * @param {string} originalName
+   * @param {string} mimeType
    * @returns {Promise<{storageKey: string, url: string, name: string, mimeType: string, sizeBytes: number}>}
    */
   async upload(buffer, originalName, mimeType) {
@@ -42,9 +45,6 @@ class LocalStorage {
     };
   }
 
-  /**
-   * Delete a file by storage key.
-   */
   async delete(storageKey) {
     const filePath = path.join(this.uploadDir, storageKey);
     try {
@@ -54,18 +54,91 @@ class LocalStorage {
     }
   }
 
-  /**
-   * Generate a URL for the file (for local, just the relative path).
-   */
   getUrl(storageKey) {
     return `/uploads/${storageKey}`;
   }
 
-  /**
-   * Generate a pre-signed URL (for local, returns the same URL — no expiry).
-   */
   getSignedUrl(storageKey, _expiresInSeconds = 300) {
     return `/uploads/${storageKey}`;
+  }
+}
+
+// ─── Cloudinary Storage ──────────────────────────────────────────────────────
+
+class CloudinaryStorage {
+  constructor({ cloudName, apiKey, apiSecret, folder = 'internship-portal' } = {}) {
+    if (!cloudName || !apiKey || !apiSecret) {
+      throw new Error(
+        'CloudinaryStorage requires CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.',
+      );
+    }
+    const { v2: cloudinary } = require('cloudinary');
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true,
+    });
+    this.cloudinary = cloudinary;
+    this.folder = folder;
+  }
+
+  /**
+   * Upload a file buffer directly to Cloudinary via upload_stream.
+   * @param {Buffer} buffer
+   * @param {string} originalName
+   * @param {string} mimeType
+   * @returns {Promise<{storageKey: string, url: string, name: string, mimeType: string, sizeBytes: number}>}
+   */
+  async upload(buffer, originalName, mimeType) {
+    const resourceType = mimeType && mimeType.startsWith('image/') ? 'image' : 'auto';
+    const publicId = uuidv4();
+
+    const result = await new Promise((resolve, reject) => {
+      const uploadStream = this.cloudinary.uploader.upload_stream(
+        {
+          folder: this.folder,
+          public_id: publicId,
+          resource_type: resourceType,
+          overwrite: false,
+        },
+        (error, res) => {
+          if (error) return reject(error);
+          return resolve(res);
+        },
+      );
+
+      Readable.from(buffer).pipe(uploadStream);
+    });
+
+    return {
+      storageKey: result.public_id,
+      url: result.secure_url,
+      name: originalName,
+      mimeType,
+      sizeBytes: result.bytes || buffer.length,
+    };
+  }
+
+  async delete(storageKey, resourceType = 'image') {
+    if (!storageKey) return;
+    await this.cloudinary.uploader.destroy(storageKey, {
+      resource_type: resourceType,
+      invalidate: true,
+    });
+  }
+
+  getUrl(storageKey) {
+    return this.cloudinary.url(storageKey, { secure: true });
+  }
+
+  getSignedUrl(storageKey, expiresInSeconds = 300) {
+    const expiresAt = Math.floor(Date.now() / 1000) + Number(expiresInSeconds || 300);
+    return this.cloudinary.url(storageKey, {
+      secure: true,
+      sign_url: true,
+      expires_at: expiresAt,
+    });
   }
 }
 
@@ -73,7 +146,6 @@ class LocalStorage {
 
 class S3Storage {
   constructor(_config) {
-    // Placeholder: will be implemented when AWS SDK is configured
     logger.info('S3Storage initialized (placeholder — implement with @aws-sdk/client-s3)');
   }
 
@@ -122,12 +194,24 @@ class GCSStorage {
 
 let instance = null;
 
+function resetStorage() {
+  instance = null;
+}
+
 function getStorage() {
   if (instance) return instance;
 
-  const provider = process.env.STORAGE_PROVIDER || 'local';
+  const provider = (process.env.STORAGE_PROVIDER || 'local').toLowerCase();
 
   switch (provider) {
+    case 'cloudinary':
+      instance = new CloudinaryStorage({
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+        apiKey: process.env.CLOUDINARY_API_KEY,
+        apiSecret: process.env.CLOUDINARY_API_SECRET,
+        folder: process.env.CLOUDINARY_FOLDER || 'internship-portal',
+      });
+      break;
     case 's3':
       instance = new S3Storage({
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -153,4 +237,11 @@ function getStorage() {
   return instance;
 }
 
-module.exports = { getStorage, LocalStorage, S3Storage, GCSStorage };
+module.exports = {
+  getStorage,
+  resetStorage,
+  LocalStorage,
+  CloudinaryStorage,
+  S3Storage,
+  GCSStorage,
+};

@@ -131,6 +131,25 @@ model User {
   trainerProfile TrainerProfile?
   status        UserStatus @default(PENDING_VERIFICATION)
   emailVerified Boolean    @default(false)
+
+  // Editable profile fields (PATCH /auth/me)
+  avatarUrl      String? @db.Text
+  phone          String?
+  headline       String?
+  bio            String? @db.Text
+  location       String?
+  college        String?
+  degree         String?
+  graduationYear String?
+  department     String?
+  organization   String?
+  linkedinUrl    String?
+  portfolioUrl   String?
+
+  // Social sign-in (POST /auth/google)
+  googleId     String? @unique
+  authProvider String  @default("LOCAL")
+
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -645,11 +664,13 @@ model TeamMember {
 }
 
 model GithubConnection {
-  id            String   @id @default(uuid())
-  userId        String   @unique
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  githubId       String?
   githubUsername String
-  scopes        Json     @default("[]")
-  connectedAt   DateTime @default(now())
+  accessToken    String?  @db.Text
+  scopes         Json     @default("[]")
+  connectedAt    DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
@@ -794,6 +815,8 @@ model TrainerProfile {
   linkedinUrl  String?
   organization String?
   resumeUrl    String?
+  resumeName   String?
+  resumeSize   Int?
   bio          String?
   isApproved   Boolean  @default(false)
   createdAt    DateTime @default(now())

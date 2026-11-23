@@ -1,11 +1,14 @@
 'use strict';
 
+const crypto = require('crypto');
 const { prisma } = require('../../../database');
 const { ApiError, hashPassword, comparePassword } = require('../../../utils');
 const tokenService = require('./token.service');
 const rbacService = require('./rbac.service');
 const logger = require('../../../libs/logger');
 const otpService = require('./otp.service');
+const googleAuthService = require('./google-auth.service');
+const { invalidateAuthUserCache } = require('../../../common/guards');
 
 /**
  * Authentication Service
@@ -103,6 +106,7 @@ class AuthService {
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
       include: {
+        trainerProfile: true,
         userRoles: {
           include: {
             role: {
@@ -153,6 +157,7 @@ class AuthService {
 
     return {
       user: {
+        _id: user.id,
         id: user.id,
         name: user.name,
         email: user.email,
@@ -160,6 +165,11 @@ class AuthService {
         emailVerified: user.emailVerified,
         roles,
         permissions: Array.from(permissionSet),
+        ...pickProfile(user),
+        authProvider: user.authProvider,
+        trainerProfile: user.trainerProfile || null,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
       },
       accessToken,
       rawRefreshToken,
@@ -322,6 +332,7 @@ class AuthService {
     }
 
     return {
+      _id: user.id,
       id: user.id,
       name: user.name,
       email: user.email,
@@ -329,11 +340,161 @@ class AuthService {
       emailVerified: user.emailVerified,
       roles,
       permissions: Array.from(permissionSet),
+      ...pickProfile(user),
+      authProvider: user.authProvider,
       trainerProfile: user.trainerProfile || null,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
   }
+
+  /**
+   * Self-service profile update (PATCH /auth/me).
+   * @param {string} userId
+   * @param {object} dto - validated by updateMeSchema (no email/roles/status/password)
+   */
+  async updateMe(userId, dto) {
+    const { trainerProfile, ...fields } = dto;
+
+    const data = {};
+    for (const key of PROFILE_FIELDS) {
+      if (fields[key] === undefined) continue;
+      const value = fields[key];
+      data[key] = value === '' || value === null ? null : String(value);
+    }
+    if (fields.name !== undefined) data.name = fields.name;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { userRoles: { include: { role: true } }, trainerProfile: true },
+    });
+    if (!user) throw ApiError.unauthorized('UNAUTHENTICATED', 'User not found.');
+
+    const isTrainer = user.userRoles.some((ur) => ur.role?.name === 'TRAINER');
+
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(data).length > 0) {
+        await tx.user.update({ where: { id: userId }, data });
+      }
+
+      if (trainerProfile && isTrainer) {
+        const tp = {};
+        for (const key of TRAINER_PROFILE_FIELDS) {
+          if (trainerProfile[key] === undefined) continue;
+          const v = trainerProfile[key];
+          if (key === 'resumeSize') tp[key] = v === null ? null : Number(v);
+          else tp[key] = v === '' || v === null ? null : String(v);
+        }
+        if (Object.keys(tp).length > 0) {
+          await tx.trainerProfile.upsert({
+            where: { userId },
+            update: tp,
+            create: {
+              userId,
+              domain: tp.domain || '',
+              experience: tp.experience || '',
+              ...tp,
+            },
+          });
+        }
+      }
+    });
+
+    invalidateAuthUserCache(userId);
+    logger.info(`[Auth] Profile updated for user ${userId}`);
+    return this.getMe(userId);
+  }
+
+  /**
+   * Sign in (or sign up) with Google (POST /auth/google).
+   * New users become ACTIVE, email-verified STUDENTs with an unusable password.
+   * @param {{ credential?: string, code?: string }} payload
+   * @param {{ ipAddress?: string, userAgent?: string }} metadata
+   */
+  async loginWithGoogle(payload, metadata = {}) {
+    const profile = await googleAuthService.verify(payload);
+    const email = profile.email.toLowerCase();
+
+    let user = await prisma.user.findUnique({ where: { email } });
+
+    if (user) {
+      if (user.status === 'SUSPENDED') {
+        throw ApiError.forbidden('ACCOUNT_SUSPENDED', 'Your account has been suspended. Please contact support.');
+      }
+      const updates = {};
+      if (!user.googleId) updates.googleId = profile.sub;
+      if (!user.emailVerified) updates.emailVerified = true;
+      if (user.status === 'PENDING_VERIFICATION') updates.status = 'ACTIVE';
+      if (!user.avatarUrl && profile.picture) updates.avatarUrl = profile.picture;
+      if (Object.keys(updates).length > 0) {
+        user = await prisma.user.update({ where: { id: user.id }, data: updates });
+      }
+    } else {
+      const roleRecord = await prisma.roleModel.findUnique({ where: { name: 'STUDENT' } });
+      if (!roleRecord) {
+        throw ApiError.internal('System role "STUDENT" is not configured. Please run seed script.');
+      }
+      // Random, never-disclosed password: the account can still set one via "forgot password".
+      const passwordHash = await hashPassword(crypto.randomBytes(32).toString('hex'));
+      user = await prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            name: profile.name || email.split('@')[0],
+            email,
+            passwordHash,
+            status: 'ACTIVE',
+            emailVerified: true,
+            googleId: profile.sub,
+            authProvider: 'GOOGLE',
+            avatarUrl: profile.picture || null,
+          },
+        });
+        await tx.userRole.create({ data: { userId: createdUser.id, roleId: roleRecord.id } });
+        return createdUser;
+      });
+      logger.info(`[Auth] New Google account created for ${email}`);
+    }
+
+    const me = await this.getMe(user.id);
+    const { accessToken, rawRefreshToken } = await tokenService.createSession(
+      { id: me.id, email: me.email, roles: me.roles },
+      metadata,
+    );
+
+    return { user: me, accessToken, rawRefreshToken };
+  }
+}
+
+const PROFILE_FIELDS = [
+  'avatarUrl',
+  'phone',
+  'headline',
+  'bio',
+  'location',
+  'college',
+  'degree',
+  'graduationYear',
+  'department',
+  'organization',
+  'linkedinUrl',
+  'portfolioUrl',
+];
+
+const TRAINER_PROFILE_FIELDS = [
+  'domain',
+  'experience',
+  'organization',
+  'linkedinUrl',
+  'resumeName',
+  'resumeSize',
+  'resumeUrl',
+  'bio',
+];
+
+function pickProfile(user) {
+  const out = {};
+  for (const key of PROFILE_FIELDS) out[key] = user[key] ?? null;
+  return out;
 }
 
 module.exports = new AuthService();
