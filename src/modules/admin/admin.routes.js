@@ -3,6 +3,7 @@ const adminController = require('./admin.controller');
 const adminCatalogController = require('./admin-catalog.controller');
 const adminProjectsController = require('./admin-projects.controller');
 const adminQuestionsController = require('./admin-questions.controller');
+const trainerApplicationsController = require('../trainer-applications/trainer-applications.controller');
 const { authenticate, authorize } = require('../../common/guards');
 const { ROLES } = require('../../common/constants');
 const { validate } = require('../../common/pipes');
@@ -10,6 +11,9 @@ const {
   createTrainerSchema,
   updateTrainerPrivilegeSchema,
 } = require('./dto/admin-trainer.dto');
+const {
+  acceptTrainerApplicationSchema,
+} = require('../trainer-applications/trainer-applications.dto');
 
 const router = Router();
 
@@ -92,9 +96,21 @@ router.delete('/trainer-assignments/:id', adminController.deleteTrainerAssignmen
 // ─── Trainers Management ─────────────────────────────────────────────────────
 router.get('/trainers', adminController.listTrainers);
 router.post('/trainers', validate(createTrainerSchema), adminController.createTrainer);
+router.get('/trainers/:id/resume', adminController.getTrainerResume);
 router.patch('/trainers/:id', validate(updateTrainerPrivilegeSchema), adminController.updateTrainerStatus);
+router.delete('/trainers/:id', adminController.deleteTrainer);
 router.get('/trainers/:id/assignments', adminController.listTrainerAssignmentsForTrainer);
 router.post('/trainers/:id/assignments', adminController.assignToTrainer);
 router.delete('/trainers/:trainerId/assignments/:assignmentId', adminController.removeTrainerAssignmentForTrainer);
+
+// ─── Trainer Join Requests ───────────────────────────────────────────────────
+router.get('/trainer-applications', trainerApplicationsController.listTrainerApplications);
+router.get('/trainer-applications/:id/resume', trainerApplicationsController.getTrainerApplicationResume);
+router.post(
+  '/trainer-applications/:id/accept',
+  validate(acceptTrainerApplicationSchema),
+  trainerApplicationsController.acceptTrainerApplication,
+);
+router.delete('/trainer-applications/:id', trainerApplicationsController.deleteTrainerApplication);
 
 module.exports = router;

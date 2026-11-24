@@ -42,11 +42,17 @@ class LocalStorage {
       name: originalName,
       mimeType,
       sizeBytes: buffer.length,
+      resourceType: 'local',
     };
   }
 
+  getFilePath(storageKey) {
+    const safeKey = path.basename(String(storageKey || ''));
+    return path.resolve(this.uploadDir, safeKey);
+  }
+
   async delete(storageKey) {
-    const filePath = path.join(this.uploadDir, storageKey);
+    const filePath = this.getFilePath(storageKey);
     try {
       await fs.promises.unlink(filePath);
     } catch (err) {
@@ -91,8 +97,10 @@ class CloudinaryStorage {
    * @returns {Promise<{storageKey: string, url: string, name: string, mimeType: string, sizeBytes: number}>}
    */
   async upload(buffer, originalName, mimeType) {
-    const resourceType = mimeType && mimeType.startsWith('image/') ? 'image' : 'auto';
-    const publicId = uuidv4();
+    const isImage = Boolean(mimeType && mimeType.startsWith('image/'));
+    const resourceType = isImage ? 'image' : 'raw';
+    const ext = isImage ? '' : path.extname(originalName || '').toLowerCase();
+    const publicId = `${uuidv4()}${ext}`;
 
     const result = await new Promise((resolve, reject) => {
       const uploadStream = this.cloudinary.uploader.upload_stream(
@@ -117,6 +125,7 @@ class CloudinaryStorage {
       name: originalName,
       mimeType,
       sizeBytes: result.bytes || buffer.length,
+      resourceType,
     };
   }
 

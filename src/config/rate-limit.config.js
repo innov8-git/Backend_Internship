@@ -75,8 +75,32 @@ function createLoginLimiter() {
   });
 }
 
+/**
+ * Strict limiter for public trainer application submissions (5 requests per 15 min per IP).
+ */
+function createTrainerApplicationLimiter() {
+  const windowMs = parseInt(process.env.TRAINER_APP_RATE_LIMIT_WINDOW_MS || '900000', 10);
+  const max = parseInt(process.env.TRAINER_APP_RATE_LIMIT_MAX || '5', 10);
+
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      success: false,
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Too many trainer applications submitted from this network. Please try again in 15 minutes.',
+        details: [],
+      },
+    },
+  });
+}
+
 module.exports = {
   createGlobalLimiter,
   createAuthLimiter,
   createLoginLimiter,
+  createTrainerApplicationLimiter,
 };
