@@ -11,7 +11,6 @@ const {
 const {
   ROLES,
   SCHEDULE_STATUS,
-  PAYMENT_STATUS,
   ENROLLMENT_STATUS,
   TASK_STATUS,
   DURATION_OPTIONS,
@@ -694,12 +693,29 @@ const reorderScheduleTasks = asyncHandler(async (req, res) => {
     throw ApiError.conflict('TEMPLATE_PUBLISHED', 'Published templates cannot be modified.');
   }
 
+  const existingTasks = await prisma.taskDefinition.findMany({
+    where: { templateId: id },
+    orderBy: { sequence: 'asc' },
+    select: { id: true },
+  });
+  const previousOrder = existingTasks.map((t) => t.id);
+
   for (let i = 0; i < orderedIds.length; i++) {
     await prisma.taskDefinition.update({
       where: { id: orderedIds[i] },
       data: { sequence: i + 1 },
     });
   }
+
+  await addAudit({
+    actorId: req.user.id,
+    action: 'TASKS_REORDERED',
+    entityType: 'ScheduleTemplate',
+    entityId: id,
+    before: { orderedIds: previousOrder },
+    after: { orderedIds },
+    ip: req.ip,
+  });
 
   ok(res, { message: 'Tasks reordered successfully.' });
 });

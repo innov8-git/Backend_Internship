@@ -296,7 +296,6 @@ const getTrainerSubmissions = asyncHandler(async (req, res) => {
   const trainerId = req.user.id;
   const { page, limit, skip } = parsePagination(req.query, 10);
   const status = req.query.status;
-  const search = req.query.search ? String(req.query.search).trim() : null;
 
   const { enrollmentIds, teamIds } = await getTrainerActiveTargetIds(trainerId);
 

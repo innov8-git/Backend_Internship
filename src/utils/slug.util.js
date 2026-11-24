@@ -21,7 +21,6 @@ async function uniqueSlug(model, name, excludeId = null) {
   let slug = base;
   let suffix = 2;
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const where = { slug };
     if (excludeId) where.NOT = { id: excludeId };
@@ -34,4 +33,4 @@ async function uniqueSlug(model, name, excludeId = null) {
   return slug;
 }
 
-module.exports = { slugify, uniqueSlug };
+module.exports = { slugify, generateSlug: slugify, uniqueSlug };

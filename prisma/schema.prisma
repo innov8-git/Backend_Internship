@@ -120,6 +120,11 @@ enum EmailStatus {
   FAILED
 }
 
+enum TrainerApplicationStatus {
+  PENDING
+  APPROVED
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -167,8 +172,10 @@ model User {
   tokens             Token[]
   auditLogs          AuditLog[]
   sopAccessLogs      SopAccessLog[]
-  taskSubmissions    TaskSubmission[]    @relation("Submitter")
-  reviews            Review[]            @relation("Reviewer")
+  taskSubmissions             TaskSubmission[]     @relation("Submitter")
+  reviews                     Review[]             @relation("Reviewer")
+  reviewedTrainerApplications TrainerApplication[] @relation("TrainerApplicationReviewer")
+  createdTrainerApplications  TrainerApplication[] @relation("TrainerApplicationCreatedUser")
 
   @@index([status])
   @@index([createdAt])
@@ -808,23 +815,58 @@ model RolePermission {
 // --- Trainer extended profile -------------------------------------------------
 
 model TrainerProfile {
-  id           String   @id @default(uuid())
-  userId       String   @unique
-  domain       String
-  experience   String
-  linkedinUrl  String?
-  organization String?
-  resumeUrl    String?
-  resumeName   String?
-  resumeSize   Int?
-  bio          String?
-  isApproved   Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  domain         String
+  experience     String
+  linkedinUrl    String?
+  organization   String?
+  resumeUrl      String?
+  resumeKey      String?
+  resumeName     String?
+  resumeMimeType String?
+  resumeSize     Int?
+  bio            String?
+  isApproved     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("trainer_profiles")
+}
+
+// --- Trainer Join Requests (public application -> admin review) ---------------
+
+model TrainerApplication {
+  id             String                   @id @default(uuid())
+  fullName       String
+  email          String
+  phone          String
+  linkedinUrl    String
+  organization   String
+  domain         String
+  experience     String
+  bio            String?                  @db.Text
+  resumeUrl      String
+  resumeKey      String
+  resumeName     String
+  resumeMimeType String
+  resumeSize     Int
+  status         TrainerApplicationStatus @default(PENDING)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdUserId  String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  reviewedBy  User? @relation("TrainerApplicationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdUser User? @relation("TrainerApplicationCreatedUser", fields: [createdUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([email])
+  @@index([createdAt])
+  @@map("trainer_applications")
 }
 
 // --- Token (refresh + email verify + password reset) -------------------------

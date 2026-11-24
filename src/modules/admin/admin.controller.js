@@ -7,8 +7,9 @@ const {
   created,
   noContent,
   parsePagination,
-  parseSort,
+  buildOrderBy,
   paginatedResponse,
+  buildDateRangeFilter,
   hashPassword,
 } = require('../../utils');
 const {
@@ -21,8 +22,11 @@ const {
   EMAIL_STATUS,
   REVIEW_STATUS,
   TEAM_STATUS,
+  TASK_STATUS,
 } = require('../../common/constants');
 const { addAudit } = require('../audit-log/audit-log.service');
+const { getStorage } = require('../../libs/storage');
+const { streamResumeFile } = require('../trainer-applications/trainer-applications.controller');
 const { sendCertificateIssuedEmail, sendTrainerWelcomeEmail } = require('../../libs/email');
 const { invalidateAuthUserCache } = require('../../common/guards');
 const logger = require('../../libs/logger');
@@ -34,6 +38,57 @@ function userDto(user) {
     (Array.isArray(user.userRoles)
       ? user.userRoles.map((ur) => ur.role?.name).filter(Boolean)
       : []);
+
+  let assignedTrainer = null;
+  const isStudent = roles.includes(ROLES.STUDENT);
+  if (isStudent && user.enrollments !== undefined) {
+    const enrollments = user.enrollments || [];
+    let foundAssignment = null;
+    let foundEnrollment = null;
+
+    for (const e of enrollments) {
+      const direct = e.trainerAssignments?.find((a) => a.active && a.trainer);
+      if (direct) {
+        foundAssignment = direct;
+        foundEnrollment = e;
+        break;
+      }
+      const team = e.team?.trainerAssignments?.find((a) => a.active && a.trainer);
+      if (team) {
+        foundAssignment = team;
+        foundEnrollment = e;
+        break;
+      }
+    }
+
+    if (foundAssignment && foundAssignment.trainer) {
+      assignedTrainer = {
+        assigned: true,
+        assignmentId: foundAssignment.id,
+        trainerId: foundAssignment.trainerId,
+        trainer: {
+          _id: foundAssignment.trainer.id,
+          id: foundAssignment.trainer.id,
+          name: foundAssignment.trainer.name,
+          email: foundAssignment.trainer.email,
+        },
+        enrollmentId: foundEnrollment.id,
+        teamId: foundAssignment.teamId || null,
+        assignedAt: foundAssignment.assignedAt,
+      };
+    } else {
+      const activeEnrollment =
+        enrollments.find((e) => e.status !== 'CANCELLED') || enrollments[0];
+      assignedTrainer = {
+        assigned: false,
+        trainer: null,
+        trainerId: null,
+        assignmentId: null,
+        enrollmentId: activeEnrollment?.id || null,
+      };
+    }
+  }
+
   return {
     _id: user.id,
     name: user.name,
@@ -41,6 +96,7 @@ function userDto(user) {
     roles,
     status: user.status,
     emailVerified: user.emailVerified,
+    ...(assignedTrainer !== null && { assignedTrainer }),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -160,7 +216,7 @@ const getAdminStats = asyncHandler(async (_req, res) => {
 
 const listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 10);
-  const { search, role, status } = req.query;
+  const { search, role, status, trainerAssignment } = req.query;
 
   const where = {
     ...(status && { status }),
@@ -181,6 +237,82 @@ const listUsers = asyncHandler(async (req, res) => {
     }),
   };
 
+  if (trainerAssignment === 'assigned') {
+    where.AND = where.AND || [];
+    where.AND.push(
+      {
+        userRoles: {
+          some: {
+            role: {
+              name: ROLES.STUDENT,
+            },
+          },
+        },
+      },
+      {
+        enrollments: {
+          some: {
+            OR: [
+              {
+                trainerAssignments: {
+                  some: {
+                    active: true,
+                  },
+                },
+              },
+              {
+                team: {
+                  trainerAssignments: {
+                    some: {
+                      active: true,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    );
+  } else if (trainerAssignment === 'unassigned') {
+    where.AND = where.AND || [];
+    where.AND.push(
+      {
+        userRoles: {
+          some: {
+            role: {
+              name: ROLES.STUDENT,
+            },
+          },
+        },
+      },
+      {
+        enrollments: {
+          none: {
+            OR: [
+              {
+                trainerAssignments: {
+                  some: {
+                    active: true,
+                  },
+                },
+              },
+              {
+                team: {
+                  trainerAssignments: {
+                    some: {
+                      active: true,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    );
+  }
+
   const [total, users] = await Promise.all([
     prisma.user.count({ where }),
     prisma.user.findMany({
@@ -190,6 +322,27 @@ const listUsers = asyncHandler(async (req, res) => {
           include: {
             role: true,
           },
+        },
+        enrollments: {
+          include: {
+            team: {
+              include: {
+                trainerAssignments: {
+                  where: { active: true },
+                  include: {
+                    trainer: { select: { id: true, name: true, email: true } },
+                  },
+                },
+              },
+            },
+            trainerAssignments: {
+              where: { active: true },
+              include: {
+                trainer: { select: { id: true, name: true, email: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -254,6 +407,22 @@ const updateUserRoles = asyncHandler(async (req, res) => {
       userRoles: {
         include: { role: true },
       },
+      enrollments: {
+        include: {
+          team: {
+            include: {
+              trainerAssignments: {
+                where: { active: true },
+                include: { trainer: { select: { id: true, name: true, email: true } } },
+              },
+            },
+          },
+          trainerAssignments: {
+            where: { active: true },
+            include: { trainer: { select: { id: true, name: true, email: true } } },
+          },
+        },
+      },
     },
   });
 
@@ -303,6 +472,22 @@ const updateUserStatus = asyncHandler(async (req, res) => {
     include: {
       userRoles: {
         include: { role: true },
+      },
+      enrollments: {
+        include: {
+          team: {
+            include: {
+              trainerAssignments: {
+                where: { active: true },
+                include: { trainer: { select: { id: true, name: true, email: true } } },
+              },
+            },
+          },
+          trainerAssignments: {
+            where: { active: true },
+            include: { trainer: { select: { id: true, name: true, email: true } } },
+          },
+        },
       },
     },
   });
@@ -695,20 +880,16 @@ const resendCertificateEmail = asyncHandler(async (req, res) => {
 
 const listAdminAuditLogs = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 20);
-  const { search, actorId, action, entityType, from, to } = req.query;
+  const { search, actorId, action, entityType, from, to, sort } = req.query;
+
+  const dateFilter = buildDateRangeFilter(from, to, 'createdAt');
+  const orderBy = buildOrderBy(sort, 'createdAt:desc', ['createdAt', 'action', 'entityType']);
 
   const where = {
     ...(actorId && { actorId: String(actorId) }),
     ...(action && { action: { contains: String(action), mode: 'insensitive' } }),
     ...(entityType && { entityType: String(entityType) }),
-    ...(from || to
-      ? {
-          createdAt: {
-            ...(from && { gte: new Date(from) }),
-            ...(to && { lte: new Date(to) }),
-          },
-        }
-      : {}),
+    ...(dateFilter || {}),
     ...(search && {
       OR: [
         { action: { contains: String(search), mode: 'insensitive' } },
@@ -724,7 +905,7 @@ const listAdminAuditLogs = asyncHandler(async (req, res) => {
     prisma.auditLog.findMany({
       where,
       include: { actor: { select: { id: true, name: true, email: true } } },
-      orderBy: { createdAt: 'desc' },
+      orderBy,
       skip,
       take: limit,
     }),
@@ -801,11 +982,12 @@ const listAdminTeams = asyncHandler(async (req, res) => {
 
 const listTrainerAssignments = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 10);
-  const { search, active } = req.query;
+  const { search, active, trainerId } = req.query;
 
   const isActive = active === 'true' ? true : active === 'false' ? false : undefined;
 
   const where = {
+    ...(trainerId && { trainerId }),
     ...(isActive !== undefined && { active: isActive }),
     ...(search && {
       OR: [
@@ -1223,6 +1405,14 @@ const listTrainers = asyncHandler(async (req, res) => {
       trainerProfile: true,
       trainerAssignments: {
         where: { active: true },
+        include: {
+          enrollment: {
+            include: {
+              user: { select: { id: true, name: true, email: true } },
+            },
+          },
+          team: { select: { id: true, name: true } },
+        },
       },
     },
     orderBy: { createdAt: 'desc' },
@@ -1235,22 +1425,42 @@ const listTrainers = asyncHandler(async (req, res) => {
     const hasTrainerRole = u.userRoles.some((ur) => ur.role?.name === 'TRAINER');
     const isTrainer = hasTrainerRole && (u.trainerProfile?.isApproved !== false);
 
+    const assignments = activeAssignments.map((a) => {
+      const student = a.enrollment?.user;
+      return {
+        _id: a.id,
+        id: a.id,
+        enrollmentId: a.enrollmentId ?? null,
+        teamId: a.teamId ?? null,
+        student: student
+          ? { _id: student.id, id: student.id, name: student.name, email: student.email }
+          : null,
+        teamName: a.team?.name ?? null,
+        assignedAt: a.assignedAt,
+      };
+    });
+
     return {
       _id: u.id,
       id: u.id,
       name: u.name,
       email: u.email,
+      phone: u.phone || null,
       status: u.status,
       isTrainer,
       assignedStudentCount,
       assignedGroupCount,
+      assignments,
       trainerProfile: u.trainerProfile
         ? {
             domain: u.trainerProfile.domain,
             experience: u.trainerProfile.experience,
+            organization: u.trainerProfile.organization || u.organization || null,
             resumeUrl: u.trainerProfile.resumeUrl,
-            resumeName: u.trainerProfile.resumeUrl ? 'Resume.pdf' : null,
-            linkedinUrl: u.trainerProfile.linkedinUrl,
+            resumeName: u.trainerProfile.resumeName || (u.trainerProfile.resumeUrl ? 'Resume.pdf' : null),
+            resumeSize: u.trainerProfile.resumeSize || null,
+            resumeMimeType: u.trainerProfile.resumeMimeType || null,
+            linkedinUrl: u.trainerProfile.linkedinUrl || u.linkedinUrl || null,
             bio: u.trainerProfile.bio,
             isApproved: u.trainerProfile.isApproved,
           }
@@ -1279,8 +1489,22 @@ const listTrainers = asyncHandler(async (req, res) => {
   ok(res, paginatedResponse(pagedItems, total, page, limit));
 });
 
+const getTrainerResume = asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    include: { trainerProfile: true },
+  });
+
+  if (!user || !user.trainerProfile) {
+    throw ApiError.notFound('Trainer profile not found.');
+  }
+
+  const download = req.query.download === '1' || req.query.download === 'true';
+  await streamResumeFile(res, user.trainerProfile, { download });
+});
+
 const createTrainer = asyncHandler(async (req, res) => {
-  const { name, email, phone, password, domain, experience, bio } = req.body;
+  const { name, email, phone, password, domain, experience, organization, linkedinUrl, bio, sendEmail = true } = req.body;
 
   const normalizedEmail = email.toLowerCase().trim();
   const existing = await prisma.user.findUnique({
@@ -1293,10 +1517,10 @@ const createTrainer = asyncHandler(async (req, res) => {
     ]);
   }
 
-  // System generate a secure 10-char password if none or empty provided
+  // System generate a secure password if none or empty provided
   const systemGenerated = !password || !password.trim();
   const rawPassword = systemGenerated
-    ? `${crypto.randomBytes(4).toString('hex')}A1!`
+    ? `${crypto.randomBytes(5).toString('hex')}A1!`
     : password.trim();
 
   const passwordHash = await hashPassword(rawPassword);
@@ -1309,11 +1533,21 @@ const createTrainer = asyncHandler(async (req, res) => {
     throw ApiError.internal('System role "TRAINER" is not configured.');
   }
 
+  const finalDomain = domain ? domain.trim() : 'General Mentorship';
+  const finalExperience = experience ? experience.trim() : '1+ years';
+  const finalOrg = organization ? organization.trim() : null;
+  const finalLinkedin = linkedinUrl ? linkedinUrl.trim() : null;
+  const finalBio = bio ? bio.trim() : null;
+
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
         name: name.trim(),
         email: normalizedEmail,
+        phone: phone ? phone.trim() : null,
+        organization: finalOrg,
+        linkedinUrl: finalLinkedin,
+        bio: finalBio,
         passwordHash,
         status: 'ACTIVE',
         emailVerified: true,
@@ -1330,9 +1564,11 @@ const createTrainer = asyncHandler(async (req, res) => {
     const profile = await tx.trainerProfile.create({
       data: {
         userId: user.id,
-        domain: domain ? domain.trim() : 'General Mentorship',
-        experience: experience ? experience.trim() : '1+ years',
-        bio: bio ? bio.trim() : null,
+        domain: finalDomain,
+        experience: finalExperience,
+        organization: finalOrg,
+        linkedinUrl: finalLinkedin,
+        bio: finalBio,
         isApproved: true,
       },
     });
@@ -1345,19 +1581,31 @@ const createTrainer = asyncHandler(async (req, res) => {
     action: 'TRAINER_CREATED',
     entityType: 'User',
     entityId: result.user.id,
-    details: { email: result.user.email, name: result.user.name },
+    before: null,
+    after: {
+      name: result.user.name,
+      email: result.user.email,
+      phone: result.user.phone,
+      domain: finalDomain,
+      experience: finalExperience,
+      organization: finalOrg,
+      isApproved: true,
+    },
     ip: req.ip,
   });
 
-  // Asynchronously dispatch welcome email with credentials
-  sendTrainerWelcomeEmail({
-    to: result.user.email,
-    name: result.user.name,
-    email: result.user.email,
-    password: rawPassword,
-  }).catch((err) => {
-    logger.error(`[Admin] Failed to dispatch welcome email to trainer ${result.user.email}: ${err.message}`);
-  });
+  // Asynchronously dispatch welcome email with credentials when enabled
+  const shouldEmail = sendEmail !== false;
+  if (shouldEmail) {
+    sendTrainerWelcomeEmail({
+      to: result.user.email,
+      name: result.user.name,
+      email: result.user.email,
+      password: rawPassword,
+    }).catch((err) => {
+      logger.error(`[Admin] Failed to dispatch welcome email to trainer ${result.user.email}: ${err.message}`);
+    });
+  }
 
   created(
     res,
@@ -1366,11 +1614,19 @@ const createTrainer = asyncHandler(async (req, res) => {
       id: result.user.id,
       name: result.user.name,
       email: result.user.email,
+      phone: result.user.phone,
       status: result.user.status,
       isTrainer: true,
       trainerProfile: result.profile,
+      credentials: {
+        email: result.user.email,
+        password: rawPassword,
+        emailSent: shouldEmail,
+      },
     },
-    'Trainer account created successfully and welcome email dispatched.',
+    shouldEmail
+      ? 'Trainer account created successfully and welcome email dispatched.'
+      : 'Trainer account created successfully.',
   );
 });
 
@@ -1388,6 +1644,8 @@ const updateTrainerStatus = asyncHandler(async (req, res) => {
 
   if (!user) throw ApiError.notFound('Trainer not found.');
 
+  const previousIsTrainer =
+    user.userRoles.some((ur) => ur.role?.name === 'TRAINER') && user.trainerProfile?.isApproved !== false;
   const trainerRole = await prisma.roleModel.findUnique({ where: { name: 'TRAINER' } });
 
   await prisma.$transaction(async (tx) => {
@@ -1424,10 +1682,170 @@ const updateTrainerStatus = asyncHandler(async (req, res) => {
     action: isTrainer ? 'TRAINER_PRIVILEGE_GRANTED' : 'TRAINER_PRIVILEGE_REVOKED',
     entityType: 'User',
     entityId: user.id,
+    before: { isTrainer: previousIsTrainer, email: user.email, name: user.name },
+    after: { isTrainer: Boolean(isTrainer), email: user.email, name: user.name },
     ip: req.ip,
   });
 
   ok(res, { _id: user.id, isTrainer: Boolean(isTrainer) }, 'Trainer privilege updated successfully.');
+});
+
+/**
+ * DELETE /api/v1/admin/trainers/:id
+ * Removes a trainer from the Trainers list:
+ * - Unassigns all active students/groups, removes TRAINER role, deletes TrainerProfile, revokes active tokens.
+ * - Permanently deletes the User row when they have no other roles and no historical records (reviews, enrollments,
+ *   payments, certificates, audit logs, submissions, teams); otherwise preserves the User row for referential
+ *   integrity (suspending the account if no other roles remain).
+ */
+const deleteTrainer = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (id === req.user.id) {
+    throw ApiError.badRequest('CANNOT_DELETE_SELF', 'You cannot remove your own account.');
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      userRoles: { include: { role: true } },
+      trainerProfile: true,
+      _count: {
+        select: {
+          reviews: true,
+          enrollments: true,
+          payments: true,
+          certificates: true,
+          auditLogs: true,
+          taskSubmissions: true,
+          teamsLed: true,
+          teamMemberships: true,
+          assessmentAttempts: true,
+          quotes: true,
+          termsAcceptances: true,
+          sopAccessLogs: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    throw ApiError.notFound('Trainer not found.');
+  }
+
+  const roleNames = (user.userRoles || []).map((ur) => ur.role?.name).filter(Boolean);
+  const hasTrainerRole = roleNames.includes(ROLES.TRAINER);
+
+  if (!hasTrainerRole && !user.trainerProfile) {
+    throw ApiError.badRequest('NOT_A_TRAINER', 'This user is not registered as a trainer.');
+  }
+
+  const otherRoles = roleNames.filter((r) => r !== ROLES.TRAINER);
+  const counts = user._count || {};
+  const hasHistoricalRecords =
+    (counts.reviews || 0) > 0 ||
+    (counts.enrollments || 0) > 0 ||
+    (counts.payments || 0) > 0 ||
+    (counts.certificates || 0) > 0 ||
+    (counts.auditLogs || 0) > 0 ||
+    (counts.taskSubmissions || 0) > 0 ||
+    (counts.teamsLed || 0) > 0 ||
+    (counts.teamMemberships || 0) > 0 ||
+    (counts.assessmentAttempts || 0) > 0 ||
+    (counts.quotes || 0) > 0 ||
+    (counts.termsAcceptances || 0) > 0 ||
+    (counts.sopAccessLogs || 0) > 0;
+
+  const canHardDeleteUser = otherRoles.length === 0 && !hasHistoricalRecords;
+  const trainerRole = await prisma.roleModel.findUnique({ where: { name: ROLES.TRAINER } });
+  const resumeKeyToDelete = user.trainerProfile?.resumeKey || null;
+
+  const beforeSnapshot = {
+    name: user.name,
+    email: user.email,
+    roles: roleNames,
+    status: user.status,
+    domain: user.trainerProfile?.domain || null,
+    organization: user.trainerProfile?.organization || null,
+  };
+
+  await prisma.$transaction(async (tx) => {
+    if (canHardDeleteUser) {
+      await tx.trainerAssignment.deleteMany({ where: { trainerId: user.id } });
+      await tx.githubConnection.deleteMany({ where: { userId: user.id } });
+      await tx.user.delete({ where: { id: user.id } });
+    } else {
+      await tx.trainerAssignment.updateMany({
+        where: { trainerId: user.id, active: true },
+        data: { active: false, unassignedAt: new Date() },
+      });
+
+      if (trainerRole) {
+        await tx.userRole.deleteMany({
+          where: { userId: user.id, roleId: trainerRole.id },
+        });
+      }
+
+      if (user.trainerProfile) {
+        await tx.trainerProfile.delete({ where: { userId: user.id } });
+      }
+
+      await tx.token.updateMany({
+        where: { userId: user.id, revoked: false },
+        data: { revoked: true },
+      });
+
+      if (otherRoles.length === 0) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { status: USER_STATUS.SUSPENDED },
+        });
+      }
+    }
+  });
+
+  invalidateAuthUserCache(user.id);
+
+  if (resumeKeyToDelete) {
+    try {
+      const storage = getStorage();
+      await storage.delete(resumeKeyToDelete, 'raw');
+    } catch (err) {
+      logger.warn(`Failed to delete trainer resume file ${resumeKeyToDelete}: ${err.message}`);
+    }
+  }
+
+  await addAudit({
+    actorId: req.user.id,
+    action: 'TRAINER_REMOVED',
+    entityType: 'User',
+    entityId: user.id,
+    before: beforeSnapshot,
+    after: canHardDeleteUser
+      ? null
+      : {
+          removedTrainerProfile: true,
+          remainingRoles: otherRoles,
+          status: otherRoles.length === 0 ? USER_STATUS.SUSPENDED : user.status,
+        },
+    ip: req.ip,
+  });
+
+  const message = canHardDeleteUser
+    ? `Trainer ${user.name} was permanently deleted.`
+    : otherRoles.length > 0
+      ? `Trainer role and profile removed from ${user.name} (other account roles kept).`
+      : `Trainer ${user.name} was removed and suspended (review history preserved).`;
+
+  ok(
+    res,
+    {
+      _id: user.id,
+      deletedAccount: canHardDeleteUser,
+      remainingRoles: otherRoles,
+    },
+    message,
+  );
 });
 
 module.exports = {
@@ -1451,6 +1869,8 @@ module.exports = {
   removeTrainerAssignmentForTrainer,
   updateStudentTrainer,
   listTrainers,
+  getTrainerResume,
   createTrainer,
   updateTrainerStatus,
+  deleteTrainer,
 };
