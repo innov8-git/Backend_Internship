@@ -25,6 +25,7 @@ const teamRoutes = require('./modules/teams/teams.routes');
 const githubRoutes = require('./modules/github-integration/github-integration.routes');
 const certificateRoutes = require('./modules/certificates/certificates.routes');
 const trainerRoutes = require('./modules/trainer/trainer.routes');
+const trainerApplicationsRoutes = require('./modules/trainer-applications/trainer-applications.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 const scheduleRoutes = require('./modules/schedule/schedule.routes');
 
@@ -97,6 +98,7 @@ app.use(`${api}/teams`, teamRoutes);
 app.use(`${api}/github`, githubRoutes);
 app.use(`${api}/certificates`, certificateRoutes);
 app.use(`${api}/trainer`, trainerRoutes);
+app.use(`${api}/trainer-applications`, trainerApplicationsRoutes);
 app.use(`${api}/admin`, adminRoutes);
 app.use(api, scheduleRoutes);
 

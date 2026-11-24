@@ -27,7 +27,13 @@ const createTrainerSchema = Joi.object({
 
   experience: Joi.string().trim().max(50).allow('', null).optional(),
 
+  organization: Joi.string().trim().max(120).allow('', null).optional(),
+
+  linkedinUrl: Joi.string().trim().uri({ scheme: ['http', 'https'] }).max(500).allow('', null).optional(),
+
   bio: Joi.string().trim().max(1000).allow('', null).optional(),
+
+  sendEmail: Joi.boolean().optional().default(true),
 });
 
 const updateTrainerPrivilegeSchema = Joi.object({
