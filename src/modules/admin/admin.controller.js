@@ -38,6 +38,57 @@ function userDto(user) {
     (Array.isArray(user.userRoles)
       ? user.userRoles.map((ur) => ur.role?.name).filter(Boolean)
       : []);
+
+  let assignedTrainer = null;
+  const isStudent = roles.includes(ROLES.STUDENT);
+  if (isStudent && user.enrollments !== undefined) {
+    const enrollments = user.enrollments || [];
+    let foundAssignment = null;
+    let foundEnrollment = null;
+
+    for (const e of enrollments) {
+      const direct = e.trainerAssignments?.find((a) => a.active && a.trainer);
+      if (direct) {
+        foundAssignment = direct;
+        foundEnrollment = e;
+        break;
+      }
+      const team = e.team?.trainerAssignments?.find((a) => a.active && a.trainer);
+      if (team) {
+        foundAssignment = team;
+        foundEnrollment = e;
+        break;
+      }
+    }
+
+    if (foundAssignment && foundAssignment.trainer) {
+      assignedTrainer = {
+        assigned: true,
+        assignmentId: foundAssignment.id,
+        trainerId: foundAssignment.trainerId,
+        trainer: {
+          _id: foundAssignment.trainer.id,
+          id: foundAssignment.trainer.id,
+          name: foundAssignment.trainer.name,
+          email: foundAssignment.trainer.email,
+        },
+        enrollmentId: foundEnrollment.id,
+        teamId: foundAssignment.teamId || null,
+        assignedAt: foundAssignment.assignedAt,
+      };
+    } else {
+      const activeEnrollment =
+        enrollments.find((e) => e.status !== 'CANCELLED') || enrollments[0];
+      assignedTrainer = {
+        assigned: false,
+        trainer: null,
+        trainerId: null,
+        assignmentId: null,
+        enrollmentId: activeEnrollment?.id || null,
+      };
+    }
+  }
+
   return {
     _id: user.id,
     name: user.name,
@@ -45,6 +96,7 @@ function userDto(user) {
     roles,
     status: user.status,
     emailVerified: user.emailVerified,
+    ...(assignedTrainer !== null && { assignedTrainer }),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -164,7 +216,7 @@ const getAdminStats = asyncHandler(async (_req, res) => {
 
 const listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 10);
-  const { search, role, status } = req.query;
+  const { search, role, status, trainerAssignment } = req.query;
 
   const where = {
     ...(status && { status }),
@@ -185,6 +237,82 @@ const listUsers = asyncHandler(async (req, res) => {
     }),
   };
 
+  if (trainerAssignment === 'assigned') {
+    where.AND = where.AND || [];
+    where.AND.push(
+      {
+        userRoles: {
+          some: {
+            role: {
+              name: ROLES.STUDENT,
+            },
+          },
+        },
+      },
+      {
+        enrollments: {
+          some: {
+            OR: [
+              {
+                trainerAssignments: {
+                  some: {
+                    active: true,
+                  },
+                },
+              },
+              {
+                team: {
+                  trainerAssignments: {
+                    some: {
+                      active: true,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    );
+  } else if (trainerAssignment === 'unassigned') {
+    where.AND = where.AND || [];
+    where.AND.push(
+      {
+        userRoles: {
+          some: {
+            role: {
+              name: ROLES.STUDENT,
+            },
+          },
+        },
+      },
+      {
+        enrollments: {
+          none: {
+            OR: [
+              {
+                trainerAssignments: {
+                  some: {
+                    active: true,
+                  },
+                },
+              },
+              {
+                team: {
+                  trainerAssignments: {
+                    some: {
+                      active: true,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    );
+  }
+
   const [total, users] = await Promise.all([
     prisma.user.count({ where }),
     prisma.user.findMany({
@@ -194,6 +322,27 @@ const listUsers = asyncHandler(async (req, res) => {
           include: {
             role: true,
           },
+        },
+        enrollments: {
+          include: {
+            team: {
+              include: {
+                trainerAssignments: {
+                  where: { active: true },
+                  include: {
+                    trainer: { select: { id: true, name: true, email: true } },
+                  },
+                },
+              },
+            },
+            trainerAssignments: {
+              where: { active: true },
+              include: {
+                trainer: { select: { id: true, name: true, email: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -258,6 +407,22 @@ const updateUserRoles = asyncHandler(async (req, res) => {
       userRoles: {
         include: { role: true },
       },
+      enrollments: {
+        include: {
+          team: {
+            include: {
+              trainerAssignments: {
+                where: { active: true },
+                include: { trainer: { select: { id: true, name: true, email: true } } },
+              },
+            },
+          },
+          trainerAssignments: {
+            where: { active: true },
+            include: { trainer: { select: { id: true, name: true, email: true } } },
+          },
+        },
+      },
     },
   });
 
@@ -307,6 +472,22 @@ const updateUserStatus = asyncHandler(async (req, res) => {
     include: {
       userRoles: {
         include: { role: true },
+      },
+      enrollments: {
+        include: {
+          team: {
+            include: {
+              trainerAssignments: {
+                where: { active: true },
+                include: { trainer: { select: { id: true, name: true, email: true } } },
+              },
+            },
+          },
+          trainerAssignments: {
+            where: { active: true },
+            include: { trainer: { select: { id: true, name: true, email: true } } },
+          },
+        },
       },
     },
   });
@@ -801,11 +982,12 @@ const listAdminTeams = asyncHandler(async (req, res) => {
 
 const listTrainerAssignments = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 10);
-  const { search, active } = req.query;
+  const { search, active, trainerId } = req.query;
 
   const isActive = active === 'true' ? true : active === 'false' ? false : undefined;
 
   const where = {
+    ...(trainerId && { trainerId }),
     ...(isActive !== undefined && { active: isActive }),
     ...(search && {
       OR: [
@@ -1223,6 +1405,14 @@ const listTrainers = asyncHandler(async (req, res) => {
       trainerProfile: true,
       trainerAssignments: {
         where: { active: true },
+        include: {
+          enrollment: {
+            include: {
+              user: { select: { id: true, name: true, email: true } },
+            },
+          },
+          team: { select: { id: true, name: true } },
+        },
       },
     },
     orderBy: { createdAt: 'desc' },
@@ -1235,6 +1425,21 @@ const listTrainers = asyncHandler(async (req, res) => {
     const hasTrainerRole = u.userRoles.some((ur) => ur.role?.name === 'TRAINER');
     const isTrainer = hasTrainerRole && (u.trainerProfile?.isApproved !== false);
 
+    const assignments = activeAssignments.map((a) => {
+      const student = a.enrollment?.user;
+      return {
+        _id: a.id,
+        id: a.id,
+        enrollmentId: a.enrollmentId ?? null,
+        teamId: a.teamId ?? null,
+        student: student
+          ? { _id: student.id, id: student.id, name: student.name, email: student.email }
+          : null,
+        teamName: a.team?.name ?? null,
+        assignedAt: a.assignedAt,
+      };
+    });
+
     return {
       _id: u.id,
       id: u.id,
@@ -1245,6 +1450,7 @@ const listTrainers = asyncHandler(async (req, res) => {
       isTrainer,
       assignedStudentCount,
       assignedGroupCount,
+      assignments,
       trainerProfile: u.trainerProfile
         ? {
             domain: u.trainerProfile.domain,
