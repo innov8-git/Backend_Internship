@@ -17,6 +17,7 @@ const { addAudit } = require('../audit-log/audit-log.service');
 function projectDto(project) {
   if (!project) return null;
   return {
+    id: project.id,
     _id: project.id,
     title: project.title,
     slug: project.slug,
@@ -187,6 +188,7 @@ const createProject = asyncHandler(async (req, res) => {
     durationsSupported,
     isDefault,
     status,
+    taskTemplates,
   } = req.body;
 
   const details = [];
@@ -250,6 +252,7 @@ const createProject = asyncHandler(async (req, res) => {
           : [1, 2, 3, 6],
       isDefault: Boolean(isDefault),
       status: status === PUBLISH_STATUS.DRAFT ? PUBLISH_STATUS.DRAFT : PUBLISH_STATUS.PUBLISHED,
+      taskTemplates: taskTemplates !== undefined ? taskTemplates : null,
       createdBy: req.user.id,
       updatedBy: req.user.id,
     },
@@ -301,6 +304,7 @@ const updateProject = asyncHandler(async (req, res) => {
     durationsSupported,
     isDefault,
     status,
+    taskTemplates,
   } = req.body;
 
   const details = [];
@@ -370,6 +374,7 @@ const updateProject = asyncHandler(async (req, res) => {
           : current.durationsSupported,
       isDefault: isDefault !== undefined ? Boolean(isDefault) : current.isDefault,
       status: status !== undefined ? status : current.status,
+      taskTemplates: taskTemplates !== undefined ? taskTemplates : current.taskTemplates,
       updatedBy: req.user.id,
     },
     include: {
@@ -636,11 +641,16 @@ const unassignProject = asyncHandler(async (req, res) => {
  */
 const getDomainProjects = asyncHandler(async (req, res) => {
   const { domainId } = req.params;
+  const cleanId = String(domainId || '').trim();
 
-  // Resolve domain by id or slug
+  // Resolve domain by id, slug, or name (case-insensitive)
   const domain = await prisma.domain.findFirst({
     where: {
-      OR: [{ id: domainId }, { slug: domainId }],
+      OR: [
+        { id: cleanId },
+        { slug: cleanId.toLowerCase() },
+        { name: { equals: cleanId, mode: 'insensitive' } },
+      ],
     },
   });
 
