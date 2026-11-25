@@ -128,6 +128,9 @@ function termsAcceptanceDto(acceptance) {
 
 function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, certificate) {
   if (!enrollment) return null;
+
+  const mentor = buildMentorDto(enrollment);
+
   return {
     _id: enrollment.id,
     userId: enrollment.userId,
@@ -136,6 +139,8 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
     planId: enrollment.planId,
     plan: planRef(plan),
     quoteId: enrollment.quoteId || null,
+    mentor,
+    assignedTrainer: mentor,
     enrollmentType:
       enrollment.enrollmentType ||
       (enrollment.teamId ? ENROLLMENT_TYPE.TEAM : ENROLLMENT_TYPE.INDIVIDUAL),
@@ -151,7 +156,6 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
     projectId: enrollment.projectId || null,
     project: enrollment.project ? projectSummaryDto(enrollment.project) : null,
     projectAssignedAt: enrollment.projectAssignedAt || null,
-    mentor: buildMentorDto(enrollment),
     createdAt: enrollment.createdAt,
     activatedAt: enrollment.activatedAt || null,
     completedAt: enrollment.completedAt || null,
@@ -457,6 +461,9 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
           },
         },
       },
+      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      certificate: true,
+      taskProgress: true,
       trainerAssignments: {
         where: { active: true },
         include: {
@@ -465,9 +472,6 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
           },
         },
       },
-      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
-      certificate: true,
-      taskProgress: true,
     },
     orderBy: { createdAt: 'desc' },
     skip,
@@ -522,6 +526,9 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
           },
         },
       },
+      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      certificate: true,
+      taskProgress: true,
       trainerAssignments: {
         where: { active: true },
         include: {
@@ -530,9 +537,6 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
           },
         },
       },
-      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
-      certificate: true,
-      taskProgress: true,
     },
   });
 
