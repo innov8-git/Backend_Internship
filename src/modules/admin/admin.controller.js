@@ -833,6 +833,165 @@ const getAdminPaymentById = asyncHandler(async (req, res) => {
   });
 });
 
+// ─── Revenue Analytics ───────────────────────────────────────────────────────
+
+const getAdminRevenue = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query, 10);
+  const { search, domainId, durationMonths, projectId, from, to } = req.query;
+
+  // Build the enrollment filter: only enrollments with at least one successful payment
+  const enrollmentWhere = {
+    payments: { some: { status: PAYMENT_STATUS.SUCCESS } },
+    ...(domainId && { plan: { domainId } }),
+    ...(durationMonths && { plan: { durationMonths: Number(durationMonths) } }),
+    ...(projectId && { projectId }),
+    ...(from || to
+      ? {
+          createdAt: {
+            ...(from && { gte: new Date(from) }),
+            ...(to && { lte: new Date(to) }),
+          },
+        }
+      : {}),
+    ...(search && {
+      OR: [
+        { user: { name: { contains: String(search), mode: 'insensitive' } } },
+        { user: { email: { contains: String(search), mode: 'insensitive' } } },
+      ],
+    }),
+  };
+
+  // Merge domain/duration filters when both are present
+  if (domainId && durationMonths) {
+    enrollmentWhere.plan = { domainId, durationMonths: Number(durationMonths) };
+  }
+
+  const [total, items] = await Promise.all([
+    prisma.enrollment.count({ where: enrollmentWhere }),
+    prisma.enrollment.findMany({
+      where: enrollmentWhere,
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        plan: {
+          include: {
+            domain: { select: { id: true, name: true } },
+            designation: { select: { id: true, name: true } },
+          },
+        },
+        project: { select: { id: true, title: true } },
+        payments: {
+          where: { status: PAYMENT_STATUS.SUCCESS },
+          select: { amount: true, currency: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+  ]);
+
+  const rows = items.map((e) => {
+    const paid = e.payments.reduce((sum, p) => sum + p.amount, 0);
+    return {
+      _id: e.id,
+      studentName: e.user?.name || e.user?.email || 'Unknown',
+      studentEmail: e.user?.email || '',
+      domain: e.plan?.domain?.name || '—',
+      domainId: e.plan?.domain?.id || null,
+      designation: e.plan?.designation?.name || '—',
+      durationMonths: e.plan?.durationMonths || 0,
+      project: e.project?.title || '—',
+      projectId: e.projectId || null,
+      studentPays: paid,
+      currency: e.payments[0]?.currency || 'INR',
+      enrollDate: e.createdAt,
+    };
+  });
+
+  // Aggregates for the same filter (without pagination) — totals across all matched enrollments
+  const allMatchingEnrollments = await prisma.enrollment.findMany({
+    where: enrollmentWhere,
+    include: {
+      plan: {
+        include: {
+          domain: { select: { id: true, name: true } },
+        },
+      },
+      project: { select: { id: true, title: true } },
+      payments: {
+        where: { status: PAYMENT_STATUS.SUCCESS },
+        select: { amount: true, currency: true, createdAt: true, updatedAt: true },
+      },
+    },
+  });
+
+  let totalRevenue = 0;
+  const revenueByDomain = new Map();
+  const revenueByMonth = new Map();
+  const revenueByProject = new Map();
+
+  allMatchingEnrollments.forEach((e) => {
+    const domainName = e.plan?.domain?.name || 'Unknown';
+    const projectTitle = e.project?.title || 'Unassigned Project';
+    e.payments.forEach((p) => {
+      totalRevenue += p.amount;
+      revenueByDomain.set(domainName, (revenueByDomain.get(domainName) || 0) + p.amount);
+      revenueByProject.set(projectTitle, (revenueByProject.get(projectTitle) || 0) + p.amount);
+      const d = new Date(p.updatedAt || p.createdAt);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      revenueByMonth.set(monthKey, (revenueByMonth.get(monthKey) || 0) + p.amount);
+    });
+  });
+
+  // Sort months chronologically
+  const sortedMonths = [...revenueByMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, amount]) => ({ month, amount }));
+
+  // Sort domains by revenue descending
+  const domainBreakdown = [...revenueByDomain.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([domain, amount]) => ({ domain, amount }));
+
+  // Sort projects by revenue descending
+  const projectBreakdown = [...revenueByProject.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([project, amount]) => ({ project, amount }));
+
+  // Fetch domain and project option lists for filters
+  const [domains, projects] = await Promise.all([
+    prisma.domain.findMany({
+      where: { status: 'PUBLISHED' },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.project.findMany({
+      select: { id: true, title: true, domainId: true },
+      orderBy: { title: 'asc' },
+    }),
+  ]);
+
+  ok(res, {
+    ...paginatedResponse(rows, total, page, limit),
+    summary: {
+      totalRevenue,
+      currency: 'INR',
+      enrollmentCount: allMatchingEnrollments.length,
+    },
+    revenueByMonth: sortedMonths,
+    revenueByDomain: domainBreakdown,
+    revenueByProject: projectBreakdown,
+    filterOptions: {
+      domains: domains.map((d) => ({ value: d.id, label: d.name })),
+      projects: projects.map((p) => ({ value: p.id, label: p.title, domainId: p.domainId })),
+      durations: [1, 2, 3, 4, 6].map((m) => ({
+        value: String(m),
+        label: `${m} month${m > 1 ? 's' : ''}`,
+      })),
+    },
+  });
+});
+
 // ─── Certificates Management ─────────────────────────────────────────────────
 
 const listAdminCertificates = asyncHandler(async (req, res) => {
@@ -2100,6 +2259,7 @@ const reviewAdminSubmission = asyncHandler(async (req, res) => {
 
 module.exports = {
   getAdminStats,
+  getAdminRevenue,
   listUsers,
   updateUserRoles,
   updateUserStatus,
