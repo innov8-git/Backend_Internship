@@ -27,6 +27,7 @@ const logger = require('../../libs/logger');
 function projectDto(project) {
   if (!project) return null;
   return {
+    id: project.id,
     _id: project.id,
     title: project.title,
     slug: project.slug,
@@ -701,11 +702,16 @@ const unassignProject = asyncHandler(async (req, res) => {
  */
 const getDomainProjects = asyncHandler(async (req, res) => {
   const { domainId } = req.params;
+  const cleanId = String(domainId || '').trim();
 
-  // Resolve domain by id or slug
+  // Resolve domain by id, slug, or name (case-insensitive)
   const domain = await prisma.domain.findFirst({
     where: {
-      OR: [{ id: domainId }, { slug: domainId }],
+      OR: [
+        { id: cleanId },
+        { slug: cleanId.toLowerCase() },
+        { name: { equals: cleanId, mode: 'insensitive' } },
+      ],
     },
   });
 
