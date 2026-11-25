@@ -78,6 +78,31 @@ function termsAcceptanceDto(acceptance) {
 
 function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, certificate) {
   if (!enrollment) return null;
+
+  const directAssignment = enrollment.trainerAssignments?.find((a) => a.active && a.trainer);
+  const teamAssignment = team?.trainerAssignments?.find((a) => a.active && a.trainer);
+  const activeAssignment = directAssignment || teamAssignment || null;
+  const trainer = activeAssignment?.trainer;
+
+  const mentor = trainer
+    ? {
+        id: trainer.id,
+        _id: trainer.id,
+        name: trainer.name,
+        email: trainer.email,
+        avatarUrl: trainer.avatarUrl || null,
+        designation:
+          trainer.trainerProfile?.headline || trainer.headline || 'Assigned Project Mentor',
+        organization:
+          trainer.trainerProfile?.organization || trainer.organization || 'ALFRE Engineering Network',
+        bio:
+          trainer.trainerProfile?.bio ||
+          trainer.bio ||
+          'Assigned Mentor for code reviews and milestone guidance.',
+        assignedAt: activeAssignment.assignedAt,
+      }
+    : null;
+
   return {
     _id: enrollment.id,
     userId: enrollment.userId,
@@ -86,6 +111,8 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
     planId: enrollment.planId,
     plan: planRef(plan),
     quoteId: enrollment.quoteId || null,
+    mentor,
+    assignedTrainer: mentor,
     enrollmentType:
       enrollment.enrollmentType ||
       (enrollment.teamId ? ENROLLMENT_TYPE.TEAM : ENROLLMENT_TYPE.INDIVIDUAL),
@@ -391,10 +418,47 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
     where,
     include: {
       plan: { include: { designation: true, domain: true } },
-      team: true,
+      team: {
+        include: {
+          trainerAssignments: {
+            where: { active: true },
+            include: {
+              trainer: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatarUrl: true,
+                  headline: true,
+                  bio: true,
+                  organization: true,
+                  trainerProfile: true,
+                },
+              },
+            },
+          },
+        },
+      },
       payments: { orderBy: { createdAt: 'desc' }, take: 1 },
       certificate: true,
       taskProgress: true,
+      trainerAssignments: {
+        where: { active: true },
+        include: {
+          trainer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+              headline: true,
+              bio: true,
+              organization: true,
+              trainerProfile: true,
+            },
+          },
+        },
+      },
     },
     orderBy: { createdAt: 'desc' },
     skip,
@@ -420,10 +484,48 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
     where: { id },
     include: {
       plan: { include: { designation: true, domain: true } },
-      team: { include: { members: true } },
+      team: {
+        include: {
+          members: true,
+          trainerAssignments: {
+            where: { active: true },
+            include: {
+              trainer: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatarUrl: true,
+                  headline: true,
+                  bio: true,
+                  organization: true,
+                  trainerProfile: true,
+                },
+              },
+            },
+          },
+        },
+      },
       payments: { orderBy: { createdAt: 'desc' }, take: 1 },
       certificate: true,
       taskProgress: true,
+      trainerAssignments: {
+        where: { active: true },
+        include: {
+          trainer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+              headline: true,
+              bio: true,
+              organization: true,
+              trainerProfile: true,
+            },
+          },
+        },
+      },
     },
   });
 
