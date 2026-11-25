@@ -23,6 +23,7 @@ function planDto(plan) {
     domainId: plan.domainId,
     durationMonths: plan.durationMonths,
     basePrice: plan.basePrice,
+    discountPercent: Number(plan.discountPercent) || 0,
     currency: plan.currency || 'INR',
     status: plan.status,
     designation: plan.designation
@@ -179,6 +180,7 @@ const getSchedulePreview = asyncHandler(async (req, res) => {
       designationId: plan.designationId,
       domainId: plan.domainId,
       durationMonths: plan.durationMonths,
+      projectId: null,
       status: PUBLISH_STATUS.PUBLISHED,
     },
     orderBy: { version: 'desc' },

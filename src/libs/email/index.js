@@ -169,11 +169,130 @@ async function sendTrainerWelcomeEmail({ to, name, email, password, loginUrl }) 
   });
 }
 
+async function sendPaymentSuccessEmail(to, name, enrollmentId, amountFormatted) {
+  const dashboardUrl = `${config.clientUrl || 'http://localhost:5173'}/dashboard`;
+  const html = `
+    <h2>Payment Confirmed — Welcome, ${name || 'Student'}!</h2>
+    <p>Your payment of <strong>₹${amountFormatted}</strong> has been confirmed and your internship enrollment is now active.</p>
+    <p>An administrator will allocate your domain capstone project and assigned mentor shortly.</p>
+    <p><a href="${dashboardUrl}" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:white;text-decoration:none;border-radius:8px;">Open Dashboard</a></p>
+  `;
+  return sendEmail({
+    to,
+    subject: 'Payment confirmed — Internship Portal',
+    html,
+    template: 'payment-success',
+    link: dashboardUrl,
+    payload: { enrollmentId, amountFormatted },
+  });
+}
+
+async function sendCertificateIssuedEmail(to, name, certificateNo, designationName) {
+  const verifyUrl = `${config.clientUrl || 'http://localhost:5173'}/verify/${encodeURIComponent(certificateNo)}`;
+  const html = `
+    <h2>Congratulations, ${name || 'Graduate'}!</h2>
+    <p>You have successfully completed your <strong>${designationName || 'Internship'}</strong> program.</p>
+    <p>Your verifiable certificate number is <strong>${certificateNo}</strong>.</p>
+    <p><a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#10B981;color:white;text-decoration:none;border-radius:8px;">Verify Certificate</a></p>
+  `;
+  return sendEmail({
+    to,
+    subject: `Your Internship Certificate (${certificateNo}) is Ready`,
+    html,
+    template: 'certificate-issued',
+    link: verifyUrl,
+    payload: { certificateNo, designationName },
+  });
+}
+
+async function sendTeamInviteEmail(to, leaderName, teamName, token) {
+  const inviteUrl = `${config.clientUrl || 'http://localhost:5173'}/team/invite/${encodeURIComponent(token)}`;
+  const html = `
+    <h2>You're invited to join team ${teamName}!</h2>
+    <p><strong>${leaderName || 'A teammate'}</strong> invited you to collaborate on their internship team.</p>
+    <p><a href="${inviteUrl}" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:white;text-decoration:none;border-radius:8px;">View Invitation</a></p>
+  `;
+  return sendEmail({
+    to,
+    subject: `Team invite: Join ${teamName}`,
+    html,
+    template: 'team-invite',
+    link: inviteUrl,
+    payload: { teamName, leaderName },
+  });
+}
+
+async function sendProjectAssignedEmail({ to, name, projectTitle, domainName, track, taskCount }) {
+  const tasksUrl = `${config.clientUrl || 'http://localhost:5173'}/tasks`;
+  const html = `
+    <h2>Your Capstone Project & Tasks Are Ready!</h2>
+    <p>Hi ${name || 'Student'}, an administrator has assigned you the <strong>${projectTitle}</strong> project (${domainName || 'Domain'} · ${track === 'app' ? 'Mobile App' : 'Web Development'} track).</p>
+    <p>${taskCount} structured task${taskCount === 1 ? '' : 's'} have been unlocked on your task board and schedule.</p>
+    <p><a href="${tasksUrl}" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:white;text-decoration:none;border-radius:8px;">View Your Tasks</a></p>
+  `;
+  return sendEmail({
+    to,
+    subject: `Project Assigned: ${projectTitle}`,
+    html,
+    template: 'project-assigned',
+    link: tasksUrl,
+    payload: { projectTitle, domainName, track, taskCount },
+  });
+}
+
+async function sendTaskSubmittedEmail({ to, trainerName, studentName, taskTitle, submissionId }) {
+  const reviewUrl = `${config.clientUrl || 'http://localhost:5173'}/trainer/review/${encodeURIComponent(submissionId)}`;
+  const html = `
+    <h2>New Submission Waiting for Review</h2>
+    <p>Hi ${trainerName || 'Trainer'}, <strong>${studentName || 'a student'}</strong> submitted work for <strong>${taskTitle || 'a task'}</strong>.</p>
+    <p><a href="${reviewUrl}" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:white;text-decoration:none;border-radius:8px;">Review Submission</a></p>
+  `;
+  return sendEmail({
+    to,
+    subject: `New Submission: ${taskTitle || 'Task'} — ${studentName || 'Student'}`,
+    html,
+    template: 'task-submitted',
+    link: reviewUrl,
+    payload: { submissionId, studentName, taskTitle },
+  });
+}
+
+async function sendTaskReviewedEmail({ to, studentName, taskTitle, decision, feedback, taskProgressId }) {
+  const taskUrl = `${config.clientUrl || 'http://localhost:5173'}/tasks/${encodeURIComponent(taskProgressId)}?tab=history`;
+  const labels = {
+    APPROVED: 'Approved',
+    CHANGES_REQUESTED: 'Changes Requested',
+    REJECTED: 'Rejected',
+    ESCALATED: 'Escalated for Lead Review',
+  };
+  const label = labels[decision] || decision;
+  const html = `
+    <h2>Task Review Update: ${label}</h2>
+    <p>Hi ${studentName || 'Student'}, your submission for <strong>${taskTitle || 'your task'}</strong> was marked <strong>${label}</strong>.</p>
+    ${feedback ? `<blockquote style="border-left:3px solid #cbd5e1;padding-left:12px;color:#334155;">${feedback}</blockquote>` : ''}
+    <p><a href="${taskUrl}" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:white;text-decoration:none;border-radius:8px;">View Task & Feedback</a></p>
+  `;
+  return sendEmail({
+    to,
+    subject: `Task ${label}: ${taskTitle || 'Your submission'}`,
+    html,
+    template: 'task-reviewed',
+    link: taskUrl,
+    payload: { taskProgressId, decision },
+  });
+}
+
 module.exports = {
   sendEmail,
   sendOtpEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendTrainerWelcomeEmail,
+  sendPaymentSuccessEmail,
+  sendCertificateIssuedEmail,
+  sendTeamInviteEmail,
+  sendProjectAssignedEmail,
+  sendTaskSubmittedEmail,
+  sendTaskReviewedEmail,
   getTransporter,
 };

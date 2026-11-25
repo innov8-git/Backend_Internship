@@ -1,3 +1,5 @@
+'use strict';
+
 const multer = require('multer');
 const { prisma } = require('../../database');
 const {
@@ -16,14 +18,24 @@ const {
   MEMBER_STATUS,
 } = require('../../common/constants');
 const { getStorage } = require('../../libs/storage');
+const { sendTaskSubmittedEmail } = require('../../libs/email');
+const {
+  createNotification,
+  notifyAdmins,
+} = require('../notifications/services/notifications.service');
+const {
+  unlockDependents,
+  checkCertificateEligibility,
+} = require('../trainer/trainer.controller');
+const logger = require('../../libs/logger');
 
 const SUBMISSION_RULES = {
   minScreenshots: 1,
   maxScreenshots: 5,
   maxFileSizeBytes: 5 * 1024 * 1024, // 5 MB
   allowedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'],
-  minDescriptionLength: 30,
-  maxDescriptionLength: 2000,
+  minDescriptionLength: 50,
+  maxDescriptionLength: 5000,
   githubUrlPrefix: 'https://github.com/',
 };
 
@@ -36,9 +48,38 @@ const upload = multer({
   },
 });
 
-function progressDto(progress, taskDef = null) {
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function progressDto(progress, taskDef = null, scopeProgressList = null) {
   if (!progress) return null;
   const task = taskDef || progress.task;
+  const prereqIds = parseJsonArray(task?.prerequisiteTaskIds);
+
+  let prerequisites = [];
+  if (prereqIds.length > 0 && Array.isArray(scopeProgressList)) {
+    const byTaskId = new Map(scopeProgressList.map((p) => [p.taskId, p]));
+    prerequisites = prereqIds.map((taskId) => {
+      const match = byTaskId.get(taskId);
+      return {
+        taskId,
+        progressId: match?.id || null,
+        title: match?.task?.title || 'Prerequisite task',
+        status: match?.status || TASK_STATUS.LOCKED,
+      };
+    });
+  }
+
   return {
     _id: progress.id,
     enrollmentId: progress.enrollmentId,
@@ -50,6 +91,7 @@ function progressDto(progress, taskDef = null) {
     approvedAt: progress.approvedAt || null,
     attempts: progress.attempts || 0,
     lastReviewStatus: progress.lastReviewStatus || null,
+    prerequisites,
     task: task
       ? {
           _id: task.id,
@@ -72,7 +114,7 @@ function submissionDto(sub) {
     attemptNumber: sub.attemptNumber,
     description: sub.description,
     githubUrl: sub.githubUrl,
-    screenshots: Array.isArray(sub.screenshots) ? sub.screenshots : JSON.parse(sub.screenshots || '[]'),
+    screenshots: parseJsonArray(sub.screenshots),
     submittedBy: sub.submittedBy
       ? { _id: sub.submittedBy.id, name: sub.submittedBy.name }
       : null,
@@ -137,7 +179,26 @@ async function loadUnlockedProgress(user, progressId) {
   const hasAccess = await canAccessProgress(user, progress);
   if (!hasAccess) throw ApiError.forbidden('FORBIDDEN', "You don't have access to this task.");
 
-  const enrollment = progress.enrollment;
+  // For team tasks viewed by a student, check the student's own enrollment if present
+  let enrollment = progress.enrollment;
+  if (progress.teamId && !user.roles.includes(ROLES.ADMIN) && !user.roles.includes(ROLES.TRAINER)) {
+    const ownEnrollment = await prisma.enrollment.findFirst({
+      where: {
+        teamId: progress.teamId,
+        userId: user.id,
+        status: { not: ENROLLMENT_STATUS.CANCELLED },
+      },
+      include: {
+        payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+        team: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (ownEnrollment) {
+      enrollment = ownEnrollment;
+    }
+  }
+
   if (
     !enrollment ||
     ![ENROLLMENT_STATUS.ACTIVE, ENROLLMENT_STATUS.IN_PROGRESS, ENROLLMENT_STATUS.COMPLETED].includes(
@@ -151,6 +212,45 @@ async function loadUnlockedProgress(user, progressId) {
   }
 
   return { progress, enrollment };
+}
+
+async function markEnrollmentInProgress(progress, enrollment) {
+  if (progress.teamId) {
+    await prisma.enrollment.updateMany({
+      where: {
+        teamId: progress.teamId,
+        status: ENROLLMENT_STATUS.ACTIVE,
+      },
+      data: { status: ENROLLMENT_STATUS.IN_PROGRESS },
+    });
+  } else if (enrollment && enrollment.status === ENROLLMENT_STATUS.ACTIVE) {
+    await prisma.enrollment.update({
+      where: { id: enrollment.id },
+      data: { status: ENROLLMENT_STATUS.IN_PROGRESS },
+    });
+  }
+}
+
+async function findActiveTrainerForProgress(progress, enrollment) {
+  const conditions = [];
+  if (progress.teamId) {
+    conditions.push({ teamId: progress.teamId, active: true });
+  }
+  const enrollmentId = progress.enrollmentId || enrollment?.id;
+  if (enrollmentId) {
+    conditions.push({ enrollmentId, active: true });
+  }
+  if (conditions.length === 0) return null;
+
+  const assignment = await prisma.trainerAssignment.findFirst({
+    where: { OR: conditions },
+    include: {
+      trainer: { select: { id: true, name: true, email: true } },
+    },
+    orderBy: { assignedAt: 'desc' },
+  });
+
+  return assignment?.trainer || null;
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -191,23 +291,28 @@ const listEnrollmentTasks = asyncHandler(async (req, res) => {
     );
   }
 
-  // Load task progress records
   const where = enrollment.teamId
     ? { teamId: enrollment.teamId }
     : { enrollmentId: enrollment.id };
 
-  const [total, items] = await Promise.all([
-    prisma.taskProgress.count({ where }),
-    prisma.taskProgress.findMany({
-      where,
-      include: { task: true },
-      orderBy: { task: { sequence: 'asc' } },
-      skip,
-      take: limit,
-    }),
-  ]);
+  const allScopeItems = await prisma.taskProgress.findMany({
+    where,
+    include: { task: true },
+    orderBy: { task: { sequence: 'asc' } },
+  });
 
-  ok(res, paginatedResponse(items.map((p) => progressDto(p)), total, page, limit));
+  const total = allScopeItems.length;
+  const paged = allScopeItems.slice(skip, skip + limit);
+
+  ok(
+    res,
+    paginatedResponse(
+      paged.map((p) => progressDto(p, p.task, allScopeItems)),
+      total,
+      page,
+      limit,
+    ),
+  );
 });
 
 /**
@@ -219,6 +324,15 @@ const getTaskContent = asyncHandler(async (req, res) => {
 
   const definition = progress.task;
   if (!definition) throw ApiError.notFound('Task definition not found.');
+
+  const scopeWhere = progress.teamId
+    ? { teamId: progress.teamId }
+    : { enrollmentId: progress.enrollmentId };
+
+  const scopeProgressList = await prisma.taskProgress.findMany({
+    where: scopeWhere,
+    include: { task: true },
+  });
 
   const locked = progress.status === TASK_STATUS.LOCKED;
 
@@ -234,9 +348,7 @@ const getTaskContent = asyncHandler(async (req, res) => {
   if (!locked) {
     task.problemStatement = definition.problemStatement || '';
     task.expectedOutcome = definition.expectedOutcome || '';
-    task.acceptanceCriteria = Array.isArray(definition.acceptanceCriteria)
-      ? definition.acceptanceCriteria
-      : JSON.parse(definition.acceptanceCriteria || '[]');
+    task.acceptanceCriteria = parseJsonArray(definition.acceptanceCriteria);
     task.starterRepoUrl = definition.starterRepoUrl || null;
   }
 
@@ -246,7 +358,7 @@ const getTaskContent = asyncHandler(async (req, res) => {
 
   ok(res, {
     locked,
-    progress: progressDto(progress, definition),
+    progress: progressDto(progress, definition, scopeProgressList),
     task,
     enrollment: {
       _id: enrollment.id,
@@ -262,7 +374,7 @@ const getTaskContent = asyncHandler(async (req, res) => {
  */
 const startTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { progress } = await loadUnlockedProgress(req.user, id);
+  const { progress, enrollment } = await loadUnlockedProgress(req.user, id);
 
   if (progress.status === TASK_STATUS.LOCKED) {
     throw ApiError.forbidden(
@@ -283,6 +395,8 @@ const startTask = asyncHandler(async (req, res) => {
     },
     include: { task: true },
   });
+
+  await markEnrollmentInProgress(updated, enrollment);
 
   ok(res, progressDto(updated));
 });
@@ -370,19 +484,20 @@ const submitTask = asyncHandler(async (req, res) => {
   }
 
   const attemptNumber = (progress.attempts || 0) + 1;
+  const requiresReview = progress.task?.requiresTrainerReview !== false;
+  const now = new Date();
 
-  // Create submission & update progress
   const [submission] = await prisma.$transaction([
     prisma.taskSubmission.create({
       data: {
         taskProgressId: progress.id,
-        enrollmentId: enrollment.id,
+        enrollmentId: progress.enrollmentId || enrollment.id,
         attemptNumber,
         description,
         githubUrl,
         screenshots,
         submittedById: req.user.id,
-        reviewStatus: REVIEW_STATUS.PENDING,
+        reviewStatus: requiresReview ? REVIEW_STATUS.PENDING : REVIEW_STATUS.APPROVED,
       },
       include: {
         submittedBy: { select: { id: true, name: true } },
@@ -391,15 +506,75 @@ const submitTask = asyncHandler(async (req, res) => {
     prisma.taskProgress.update({
       where: { id: progress.id },
       data: {
-        status: TASK_STATUS.SUBMITTED,
-        submittedAt: new Date(),
+        status: requiresReview ? TASK_STATUS.SUBMITTED : TASK_STATUS.APPROVED,
+        submittedAt: now,
+        approvedAt: requiresReview ? undefined : now,
         attempts: attemptNumber,
-        lastReviewStatus: REVIEW_STATUS.PENDING,
+        lastReviewStatus: requiresReview ? REVIEW_STATUS.PENDING : REVIEW_STATUS.APPROVED,
       },
     }),
   ]);
 
-  created(res, submissionDto(submission));
+  await markEnrollmentInProgress(progress, enrollment);
+
+  if (!requiresReview) {
+    // Auto-approved self-check task: unlock dependent tasks and check certificate eligibility
+    await unlockDependents(progress.enrollmentId, progress.teamId);
+    await checkCertificateEligibility(progress.enrollmentId, progress.teamId);
+
+    return created(res, {
+      ...submissionDto(submission),
+      autoApproved: true,
+      assignedTrainer: null,
+    });
+  }
+
+  // Notify assigned trainer, or alert admins if no trainer is currently assigned
+  const assignedTrainer = await findActiveTrainerForProgress(progress, enrollment);
+  const taskTitle = progress.task?.title || 'Task';
+
+  if (assignedTrainer) {
+    await createNotification({
+      userId: assignedTrainer.id,
+      type: 'TASK_SUBMITTED',
+      title: `New submission: ${taskTitle}`,
+      message: `${req.user.name} submitted attempt #${attemptNumber} for review.`,
+      link: `/trainer/review/${submission.id}`,
+      metadata: {
+        submissionId: submission.id,
+        taskProgressId: progress.id,
+        enrollmentId: progress.enrollmentId,
+      },
+    });
+
+    if (assignedTrainer.email) {
+      sendTaskSubmittedEmail({
+        to: assignedTrainer.email,
+        trainerName: assignedTrainer.name,
+        studentName: req.user.name,
+        taskTitle,
+        submissionId: submission.id,
+      }).catch((err) => logger.warn(`[Tasks] Failed to notify trainer via email: ${err.message}`));
+    }
+  } else {
+    await notifyAdmins({
+      type: 'UNASSIGNED_SUBMISSION',
+      title: `Unassigned submission waiting: ${taskTitle}`,
+      message: `${req.user.name} submitted attempt #${attemptNumber}, but no trainer is assigned to this enrollment yet.`,
+      link: '/admin/submissions?unassigned=true',
+      metadata: {
+        submissionId: submission.id,
+        enrollmentId: progress.enrollmentId,
+        teamId: progress.teamId || null,
+      },
+    });
+  }
+
+  created(res, {
+    ...submissionDto(submission),
+    autoApproved: false,
+    assignedTrainer: assignedTrainer ? { _id: assignedTrainer.id, name: assignedTrainer.name } : null,
+  });
 });
 
 /**

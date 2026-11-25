@@ -74,6 +74,10 @@ router.patch('/users/:id/trainer', adminController.updateStudentTrainer);
 router.get('/enrollments', adminController.listAdminEnrollments);
 router.get('/enrollments/:id', adminController.getAdminEnrollmentById);
 
+// ─── Submissions & Escalations Oversight ─────────────────────────────────────
+router.get('/submissions', adminController.listAdminSubmissions);
+router.post('/submissions/:id/review', adminController.reviewAdminSubmission);
+
 // ─── Payments ────────────────────────────────────────────────────────────────
 router.get('/payments', adminController.listAdminPayments);
 router.get('/payments/:id', adminController.getAdminPaymentById);
