@@ -29,6 +29,7 @@ const trainerApplicationsRoutes = require('./modules/trainer-applications/traine
 const adminRoutes = require('./modules/admin/admin.routes');
 const scheduleRoutes = require('./modules/schedule/schedule.routes');
 const internshipRoutes = require('./modules/internships/internships.routes');
+const notificationRoutes = require('./modules/notifications/notifications.routes');
 
 const app = express();
 
@@ -102,6 +103,7 @@ app.use(`${api}/trainer`, trainerRoutes);
 app.use(`${api}/trainer-applications`, trainerApplicationsRoutes);
 app.use(`${api}/admin`, adminRoutes);
 app.use(`${api}/internships`, internshipRoutes);
+app.use(`${api}/notifications`, notificationRoutes);
 app.use(api, scheduleRoutes);
 
 // ─── 404 catch-all ───────────────────────────────────────────────────────────

@@ -126,6 +126,7 @@ const getStudentSchedule = asyncHandler(async (req, res) => {
         designationId: enrollment.plan.designationId,
         domainId: enrollment.plan.domainId,
         durationMonths: enrollment.plan.durationMonths,
+        projectId: null,
         status: SCHEDULE_STATUS.PUBLISHED,
       },
       orderBy: { version: 'desc' },
@@ -138,8 +139,13 @@ const getStudentSchedule = asyncHandler(async (req, res) => {
   }
   const days = rawDays.sort((a, b) => Number(a.dayNumber) - Number(b.dayNumber));
 
-  // Map progress by dayNumber
-  const progressList = enrollment.taskProgress || [];
+  // Map progress by dayNumber (use shared team progress for team enrollments)
+  const progressList = enrollment.teamId
+    ? await prisma.taskProgress.findMany({
+        where: { teamId: enrollment.teamId },
+        include: { task: true },
+      })
+    : enrollment.taskProgress || [];
   const taskMap = new Map();
   progressList.forEach((p) => {
     if (p.task && p.task.dayNumber) {
@@ -216,6 +222,7 @@ const getDaySop = asyncHandler(async (req, res) => {
         designationId: enrollment.plan.designationId,
         domainId: enrollment.plan.domainId,
         durationMonths: enrollment.plan.durationMonths,
+        projectId: null,
         status: SCHEDULE_STATUS.PUBLISHED,
       },
       orderBy: { version: 'desc' },
@@ -258,6 +265,7 @@ const listAdminSchedules = asyncHandler(async (req, res) => {
   const { designationId, domainId, durationMonths, status, search } = req.query;
 
   const where = {
+    projectId: null,
     ...(designationId && { designationId: String(designationId) }),
     ...(domainId && { domainId: String(domainId) }),
     ...(durationMonths && { durationMonths: Number(durationMonths) }),
@@ -299,6 +307,7 @@ const listAdminSchedules = asyncHandler(async (req, res) => {
       status: t.status,
       totalDays: days.length,
       taskCount: t.taskDefinitions.length,
+      tasksCount: t.taskDefinitions.length,
       publishedAt: t.publishedAt,
       updatedAt: t.updatedAt,
       designation: t.designation ? { _id: t.designation.id, name: t.designation.name, slug: t.designation.slug } : null,
@@ -405,6 +414,8 @@ const getAdminScheduleById = asyncHandler(async (req, res) => {
     version: template.version,
     status: template.status,
     days,
+    taskCount: template.taskDefinitions.length,
+    tasksCount: template.taskDefinitions.length,
     taskDefinitions: template.taskDefinitions.map((t) => ({
       _id: t.id,
       templateId: t.templateId,
@@ -555,6 +566,7 @@ const listScheduleVersions = asyncHandler(async (req, res) => {
       publishedAt: v.publishedAt,
       updatedAt: v.updatedAt,
       taskCount: v.taskDefinitions.length,
+      tasksCount: v.taskDefinitions.length,
     })),
   );
 });

@@ -1,3 +1,5 @@
+'use strict';
+
 const { prisma } = require('../../database');
 const {
   ApiError,
@@ -14,12 +16,73 @@ const {
   CERTIFICATE_STATUS,
   EMAIL_STATUS,
   ENROLLMENT_STATUS,
+  ENROLLMENT_TYPE,
+  MEMBER_STATUS,
 } = require('../../common/constants');
-const { sendCertificateIssuedEmail } = require('../../libs/email');
+const {
+  sendCertificateIssuedEmail,
+  sendTaskReviewedEmail,
+} = require('../../libs/email');
+const { addAudit } = require('../audit-log/audit-log.service');
+const {
+  createNotificationsForUsers,
+  notifyAdmins,
+} = require('../notifications/services/notifications.service');
 const logger = require('../../libs/logger');
 
 const NOT_ASSIGNED_MESSAGE = "This submission isn't assigned to you.";
 const MIN_FEEDBACK_LENGTH = 10;
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function planRef(plan) {
+  if (!plan) return null;
+  return {
+    _id: plan.id,
+    durationMonths: plan.durationMonths,
+    basePrice: plan.basePrice,
+    currency: plan.currency || 'INR',
+    designation: plan.designation
+      ? { _id: plan.designation.id, name: plan.designation.name, slug: plan.designation.slug }
+      : null,
+    domain: plan.domain
+      ? { _id: plan.domain.id, name: plan.domain.name, slug: plan.domain.slug }
+      : null,
+  };
+}
+
+function projectRef(project) {
+  if (!project) return null;
+  return {
+    _id: project.id,
+    title: project.title,
+    slug: project.slug,
+  };
+}
+
+function buildTrainerSubmissionWhere(enrollmentIds, teamIds) {
+  const or = [];
+  if (enrollmentIds.length > 0) {
+    or.push({ enrollmentId: { in: enrollmentIds } });
+    or.push({ taskProgress: { enrollmentId: { in: enrollmentIds } } });
+  }
+  if (teamIds.length > 0) {
+    or.push({ taskProgress: { teamId: { in: teamIds } } });
+    or.push({ taskProgress: { enrollment: { teamId: { in: teamIds } } } });
+  }
+  return or;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +103,13 @@ async function trainerCanAccessSubmission(trainerId, submission) {
   if (submission.enrollmentId && enrollmentIds.includes(submission.enrollmentId)) {
     return true;
   }
+  if (submission.taskProgress?.enrollmentId && enrollmentIds.includes(submission.taskProgress.enrollmentId)) {
+    return true;
+  }
   if (submission.taskProgress?.teamId && teamIds.includes(submission.taskProgress.teamId)) {
+    return true;
+  }
+  if (submission.taskProgress?.enrollment?.teamId && teamIds.includes(submission.taskProgress.enrollment.teamId)) {
     return true;
   }
   return false;
@@ -79,13 +148,7 @@ async function unlockDependents(enrollmentId, teamId) {
   const lockedProgress = allProgress.filter((p) => p.status === TASK_STATUS.LOCKED);
 
   for (const p of lockedProgress) {
-    let prereqs = [];
-    if (p.task?.prerequisiteTaskIds) {
-      prereqs = Array.isArray(p.task.prerequisiteTaskIds)
-        ? p.task.prerequisiteTaskIds
-        : JSON.parse(p.task.prerequisiteTaskIds || '[]');
-    }
-
+    const prereqs = parseJsonArray(p.task?.prerequisiteTaskIds);
     const allPrereqsApproved = prereqs.length === 0 || prereqs.every((id) => approvedTaskIds.has(id));
     if (allPrereqsApproved) {
       await prisma.taskProgress.update({
@@ -99,24 +162,22 @@ async function unlockDependents(enrollmentId, teamId) {
 async function checkCertificateEligibility(enrollmentId, teamId) {
   const where = teamId ? { teamId } : { enrollmentId };
 
-  const allProgress = await prisma.taskProgress.findMany({
-    where,
-  });
+  const allProgress = await prisma.taskProgress.findMany({ where });
 
   if (allProgress.length === 0 || !allProgress.every((p) => p.status === TASK_STATUS.APPROVED)) {
     return;
   }
 
-  // Load target enrollments (all team members if team)
   const targetEnrollments = await prisma.enrollment.findMany({
-    where: teamId ? { teamId } : { id: enrollmentId },
+    where: teamId
+      ? { teamId, status: { not: ENROLLMENT_STATUS.CANCELLED } }
+      : { id: enrollmentId },
     include: { user: true, plan: { include: { designation: true } } },
   });
 
   for (const enrollment of targetEnrollments) {
     if (enrollment.status === ENROLLMENT_STATUS.COMPLETED) continue;
 
-    // Check if certificate already exists
     const existing = await prisma.certificate.findUnique({
       where: { enrollmentId: enrollment.id },
     });
@@ -143,6 +204,14 @@ async function checkCertificateEligibility(enrollmentId, teamId) {
     });
 
     if (enrollment.user) {
+      await createNotificationsForUsers([enrollment.user.id], {
+        type: 'CERTIFICATE_ISSUED',
+        title: `Certificate issued (${certNo})`,
+        message: `Congratulations! All tasks are approved and your ${enrollment.plan?.designation?.name || 'internship'} certificate is ready to download.`,
+        link: '/certificate',
+        metadata: { certificateId: certificate.id, certificateNo: certNo },
+      });
+
       try {
         await sendCertificateIssuedEmail(
           enrollment.user.email,
@@ -157,25 +226,306 @@ async function checkCertificateEligibility(enrollmentId, teamId) {
   }
 }
 
+async function findNextPendingForTrainer(trainerId, excludeSubmissionId) {
+  const { enrollmentIds, teamIds } = await getTrainerActiveTargetIds(trainerId);
+  const or = buildTrainerSubmissionWhere(enrollmentIds, teamIds);
+  if (or.length === 0) return null;
+
+  const next = await prisma.taskSubmission.findFirst({
+    where: {
+      ...(excludeSubmissionId && { id: { not: excludeSubmissionId } }),
+      reviewStatus: REVIEW_STATUS.PENDING,
+      OR: or,
+    },
+    orderBy: { submittedAt: 'asc' },
+    select: { id: true },
+  });
+
+  return next?.id || null;
+}
+
+function computeLastActivity(progressList, fallback) {
+  let latest = null;
+  for (const p of progressList || []) {
+    const candidates = [p.startedAt, p.submittedAt, p.approvedAt, p.updatedAt];
+    if (Array.isArray(p.submissions)) {
+      p.submissions.forEach((s) => candidates.push(s.submittedAt));
+    }
+    for (const dt of candidates) {
+      if (!dt) continue;
+      const t = new Date(dt).getTime();
+      if (!Number.isNaN(t) && (!latest || t > latest.getTime())) {
+        latest = new Date(t);
+      }
+    }
+  }
+  return latest || fallback || null;
+}
+
+/**
+ * Shared atomic review execution used by both Trainers (`POST /trainer/submissions/:id/review`)
+ * and Admins (`POST /admin/submissions/:id/review` for escalated or unassigned submissions).
+ */
+async function executeSubmissionReview({
+  reviewer,
+  submissionId,
+  decision,
+  feedback,
+  ip = null,
+  allowAdminOverride = false,
+}) {
+  const submission = await prisma.taskSubmission.findUnique({
+    where: { id: submissionId },
+    include: {
+      submittedBy: { select: { id: true, name: true, email: true } },
+      taskProgress: {
+        include: {
+          task: true,
+          enrollment: {
+            include: {
+              user: { select: { id: true, name: true, email: true } },
+              team: {
+                include: {
+                  members: {
+                    where: { status: MEMBER_STATUS.JOINED },
+                    include: { user: { select: { id: true, name: true, email: true } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!submission) throw ApiError.notFound('Submission not found.');
+
+  const isAdmin = allowAdminOverride && reviewer.roles.includes(ROLES.ADMIN);
+  if (!isAdmin) {
+    const canAccess = await trainerCanAccessSubmission(reviewer.id, submission);
+    if (!canAccess) {
+      throw ApiError.forbidden('FORBIDDEN', NOT_ASSIGNED_MESSAGE);
+    }
+  }
+
+  if (submission.submittedById === reviewer.id) {
+    throw ApiError.forbidden('FORBIDDEN', 'You cannot review your own work.');
+  }
+
+  const reviewableStatuses = isAdmin
+    ? [REVIEW_STATUS.PENDING, REVIEW_STATUS.ESCALATED]
+    : [REVIEW_STATUS.PENDING];
+
+  if (!reviewableStatuses.includes(submission.reviewStatus)) {
+    throw ApiError.conflict('ALREADY_REVIEWED', 'This submission has already been reviewed.');
+  }
+
+  const normalizedDecision = String(decision || '').trim().toUpperCase();
+  const text = String(feedback || '').trim();
+
+  if (!Object.values(REVIEW_DECISION).includes(normalizedDecision)) {
+    throw ApiError.validationError([
+      { field: 'decision', message: 'Choose approve, request changes, reject or escalate.' },
+    ]);
+  }
+
+  if (isAdmin && normalizedDecision === REVIEW_DECISION.ESCALATED) {
+    throw ApiError.validationError([
+      { field: 'decision', message: 'Choose approve, request changes or reject to resolve an escalation.' },
+    ]);
+  }
+
+  if (normalizedDecision !== REVIEW_DECISION.APPROVED && text.length < MIN_FEEDBACK_LENGTH) {
+    throw ApiError.validationError([
+      {
+        field: 'feedback',
+        message: text
+          ? `Write at least ${MIN_FEEDBACK_LENGTH} characters so the student knows what to change.`
+          : 'Feedback is required when you request changes, reject or escalate.',
+      },
+    ]);
+  }
+
+  const now = new Date();
+  let nextProgressData;
+  if (normalizedDecision === REVIEW_DECISION.APPROVED) {
+    nextProgressData = {
+      status: TASK_STATUS.APPROVED,
+      approvedAt: now,
+      lastReviewStatus: REVIEW_STATUS.APPROVED,
+    };
+  } else if (normalizedDecision === REVIEW_DECISION.ESCALATED) {
+    nextProgressData = {
+      status: TASK_STATUS.SUBMITTED,
+      lastReviewStatus: REVIEW_STATUS.ESCALATED,
+    };
+  } else {
+    nextProgressData = {
+      status: TASK_STATUS.CHANGES_REQUESTED,
+      lastReviewStatus: normalizedDecision,
+    };
+  }
+
+  const review = await prisma.$transaction(async (tx) => {
+    // Upsert review so an Admin resolving an ESCALATED submission updates the existing Review row cleanly
+    const savedReview = await tx.review.upsert({
+      where: { submissionId: submission.id },
+      create: {
+        submissionId: submission.id,
+        trainerId: reviewer.id,
+        decision: normalizedDecision,
+        feedback: text,
+        reviewedAt: now,
+      },
+      update: {
+        trainerId: reviewer.id,
+        decision: normalizedDecision,
+        feedback: text,
+        reviewedAt: now,
+      },
+      include: { trainer: { select: { id: true, name: true } } },
+    });
+
+    await tx.taskSubmission.update({
+      where: { id: submission.id },
+      data: { reviewStatus: normalizedDecision },
+    });
+
+    await tx.taskProgress.update({
+      where: { id: submission.taskProgressId },
+      data: nextProgressData,
+    });
+
+    return savedReview;
+  });
+
+  const tp = submission.taskProgress;
+  if (normalizedDecision === REVIEW_DECISION.APPROVED) {
+    await unlockDependents(tp.enrollmentId, tp.teamId);
+    await checkCertificateEligibility(tp.enrollmentId, tp.teamId);
+  }
+
+  await addAudit({
+    actorId: reviewer.id,
+    action:
+      normalizedDecision === REVIEW_DECISION.ESCALATED
+        ? 'SUBMISSION_ESCALATED'
+        : 'SUBMISSION_REVIEWED',
+    entityType: 'TaskSubmission',
+    entityId: submission.id,
+    before: { reviewStatus: submission.reviewStatus },
+    after: {
+      decision: normalizedDecision,
+      taskProgressId: submission.taskProgressId,
+      resolvedByAdmin: isAdmin,
+    },
+    ip,
+  });
+
+  // Notify stakeholders
+  const taskTitle = tp?.task?.title || 'Task';
+  const enrollment = tp?.enrollment;
+  const studentRecipients = enrollment?.team?.members?.length
+    ? enrollment.team.members.map((m) => m.user).filter(Boolean)
+    : enrollment?.user
+      ? [enrollment.user]
+      : submission.submittedBy
+        ? [submission.submittedBy]
+        : [];
+
+  if (normalizedDecision === REVIEW_DECISION.ESCALATED) {
+    await notifyAdmins({
+      type: 'SUBMISSION_ESCALATED',
+      title: `Escalated submission: ${taskTitle}`,
+      message: `${reviewer.name} escalated attempt #${submission.attemptNumber} for second-tier review.`,
+      link: '/admin/submissions?status=ESCALATED',
+      metadata: { submissionId: submission.id, taskProgressId: submission.taskProgressId },
+    });
+  } else if (studentRecipients.length > 0) {
+    const labelMap = {
+      APPROVED: 'approved',
+      CHANGES_REQUESTED: 'marked as changes requested',
+      REJECTED: 'rejected',
+    };
+    await createNotificationsForUsers(
+      studentRecipients.map((u) => u.id),
+      {
+        type: `TASK_${normalizedDecision}`,
+        title: `Task ${normalizedDecision === 'APPROVED' ? 'Approved' : 'Review Update'}: ${taskTitle}`,
+        message:
+          normalizedDecision === REVIEW_DECISION.APPROVED
+            ? `Your work on "${taskTitle}" was approved by ${reviewer.name}. Any dependent tasks are now unlocked.`
+            : `Your submission for "${taskTitle}" was ${labelMap[normalizedDecision] || 'reviewed'}. Check the feedback and resubmit.`,
+        link: `/tasks/${submission.taskProgressId}?tab=history`,
+        metadata: { submissionId: submission.id, decision: normalizedDecision },
+      },
+    );
+
+    studentRecipients.forEach((u) => {
+      if (!u.email) return;
+      sendTaskReviewedEmail({
+        to: u.email,
+        studentName: u.name,
+        taskTitle,
+        decision: normalizedDecision,
+        feedback: text,
+        taskProgressId: submission.taskProgressId,
+      }).catch((err) => logger.warn(`[Trainer] Failed to email student ${u.email}: ${err.message}`));
+    });
+  }
+
+  const nextPendingId = isAdmin ? null : await findNextPendingForTrainer(reviewer.id, submission.id);
+
+  return {
+    review: {
+      _id: review.id,
+      submissionId: review.submissionId,
+      trainerId: review.trainerId,
+      decision: review.decision,
+      feedback: review.feedback,
+      reviewedAt: review.reviewedAt,
+      trainer: review.trainer ? { _id: review.trainer.id, name: review.trainer.name } : null,
+    },
+    submission: {
+      _id: submission.id,
+      reviewStatus: normalizedDecision,
+    },
+    nextPendingId,
+  };
+}
+
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 const getTrainerStats = asyncHandler(async (req, res) => {
   const trainerId = req.user.id;
   const { enrollmentIds, teamIds, assignments } = await getTrainerActiveTargetIds(trainerId);
+  const subOr = buildTrainerSubmissionWhere(enrollmentIds, teamIds);
+
+  const progressOr = [];
+  if (enrollmentIds.length > 0) progressOr.push({ enrollmentId: { in: enrollmentIds } });
+  if (teamIds.length > 0) progressOr.push({ teamId: { in: teamIds } });
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [pendingSubmissions, reviewedToday, totalReviewed] = await Promise.all([
-    prisma.taskSubmission.count({
-      where: {
-        reviewStatus: REVIEW_STATUS.PENDING,
-        OR: [
-          { enrollmentId: { in: enrollmentIds } },
-          { taskProgress: { teamId: { in: teamIds } } },
-        ],
-      },
-    }),
+  const [pending, changesRequested, reviewedToday, totalReviewed] = await Promise.all([
+    subOr.length > 0
+      ? prisma.taskSubmission.count({
+          where: {
+            reviewStatus: REVIEW_STATUS.PENDING,
+            OR: subOr,
+          },
+        })
+      : Promise.resolve(0),
+    progressOr.length > 0
+      ? prisma.taskProgress.count({
+          where: {
+            status: TASK_STATUS.CHANGES_REQUESTED,
+            OR: progressOr,
+          },
+        })
+      : Promise.resolve(0),
     prisma.review.count({
       where: {
         trainerId,
@@ -187,10 +537,19 @@ const getTrainerStats = asyncHandler(async (req, res) => {
     }),
   ]);
 
+  const assignedStudents = assignments.filter((a) => Boolean(a.enrollmentId) && !a.teamId).length;
+  const assignedTeams = assignments.filter((a) => Boolean(a.teamId)).length;
+
   ok(res, {
-    activeAssignments: assignments.length,
-    pendingSubmissions,
+    // Frontend contract keys
+    pending,
+    changesRequested,
     reviewedToday,
+    assignedStudents,
+    assignedTeams,
+    // Backward-compatible keys
+    activeAssignments: assignments.length,
+    pendingSubmissions: pending,
     totalReviewed,
   });
 });
@@ -206,7 +565,14 @@ const getTrainerAssignments = asyncHandler(async (req, res) => {
         include: {
           user: true,
           plan: { include: { designation: true, domain: true } },
-          taskProgress: true,
+          project: true,
+          taskProgress: {
+            include: {
+              submissions: {
+                select: { id: true, reviewStatus: true, submittedAt: true },
+              },
+            },
+          },
         },
       },
       team: {
@@ -214,6 +580,11 @@ const getTrainerAssignments = asyncHandler(async (req, res) => {
           leader: true,
           plan: { include: { designation: true, domain: true } },
           members: { include: { user: true } },
+          enrollments: {
+            where: { status: { not: ENROLLMENT_STATUS.CANCELLED } },
+            include: { project: true },
+            take: 1,
+          },
         },
       },
     },
@@ -225,57 +596,83 @@ const getTrainerAssignments = asyncHandler(async (req, res) => {
     if (a.enrollment) {
       const e = a.enrollment;
       const progress = e.taskProgress || [];
-      const approved = progress.filter((p) => p.status === TASK_STATUS.APPROVED).length;
-      const pendingReview = progress.filter((p) => p.status === TASK_STATUS.SUBMITTED).length;
+      const approvedTasks = progress.filter((p) => p.status === TASK_STATUS.APPROVED).length;
+      const totalTasks = progress.length;
+      const pendingSubmissions = progress.reduce(
+        (sum, p) =>
+          sum + (p.submissions || []).filter((s) => s.reviewStatus === REVIEW_STATUS.PENDING).length,
+        0,
+      );
+      const lastActivityAt = computeLastActivity(progress, e.activatedAt || a.assignedAt);
 
       rows.push({
         _id: a.id,
-        targetType: 'INDIVIDUAL',
+        type: ENROLLMENT_TYPE.INDIVIDUAL,
+        targetType: ENROLLMENT_TYPE.INDIVIDUAL,
         assignmentId: a.id,
         enrollmentId: e.id,
+        teamId: null,
         student: {
           _id: e.user.id,
           name: e.user.name,
           email: e.user.email,
         },
-        plan: {
-          _id: e.plan.id,
-          designation: e.plan.designation ? { _id: e.plan.designation.id, name: e.plan.designation.name } : null,
-          domain: e.plan.domain ? { _id: e.plan.domain.id, name: e.plan.domain.name } : null,
-          durationMonths: e.plan.durationMonths,
-        },
-        progress: { approved, total: progress.length },
-        pendingReviewCount: pendingReview,
+        team: null,
+        plan: planRef(e.plan),
+        project: projectRef(e.project),
+        track: e.track || 'web',
+        approvedTasks,
+        totalTasks,
+        pendingSubmissions,
+        progress: { approved: approvedTasks, total: totalTasks },
+        pendingReviewCount: pendingSubmissions,
         assignedAt: a.assignedAt,
-        lastActivityAt: a.assignedAt,
+        lastActivityAt,
       });
     } else if (a.team) {
       const t = a.team;
-      const progress = await prisma.taskProgress.findMany({ where: { teamId: t.id } });
-      const approved = progress.filter((p) => p.status === TASK_STATUS.APPROVED).length;
-      const pendingReview = progress.filter((p) => p.status === TASK_STATUS.SUBMITTED).length;
+      const progress = await prisma.taskProgress.findMany({
+        where: { teamId: t.id },
+        include: {
+          submissions: {
+            select: { id: true, reviewStatus: true, submittedAt: true },
+          },
+        },
+      });
+      const approvedTasks = progress.filter((p) => p.status === TASK_STATUS.APPROVED).length;
+      const totalTasks = progress.length;
+      const pendingSubmissions = progress.reduce(
+        (sum, p) =>
+          sum + (p.submissions || []).filter((s) => s.reviewStatus === REVIEW_STATUS.PENDING).length,
+        0,
+      );
+      const teamEnrollment = t.enrollments?.[0] || null;
+      const lastActivityAt = computeLastActivity(progress, teamEnrollment?.activatedAt || t.updatedAt || a.assignedAt);
 
       rows.push({
         _id: a.id,
-        targetType: 'TEAM',
+        type: ENROLLMENT_TYPE.TEAM,
+        targetType: ENROLLMENT_TYPE.TEAM,
         assignmentId: a.id,
+        enrollmentId: null,
         teamId: t.id,
+        student: null,
         team: {
           _id: t.id,
           name: t.name,
-          membersCount: t.members.filter((m) => m.status === 'JOINED').length,
+          membersCount: t.members.filter((m) => m.status === MEMBER_STATUS.JOINED).length,
           leader: { _id: t.leader.id, name: t.leader.name, email: t.leader.email },
         },
-        plan: {
-          _id: t.plan.id,
-          designation: t.plan.designation ? { _id: t.plan.designation.id, name: t.plan.designation.name } : null,
-          domain: t.plan.domain ? { _id: t.plan.domain.id, name: t.plan.domain.name } : null,
-          durationMonths: t.plan.durationMonths,
-        },
-        progress: { approved, total: progress.length },
-        pendingReviewCount: pendingReview,
+        plan: planRef(t.plan),
+        project: projectRef(teamEnrollment?.project),
+        track: teamEnrollment?.track || 'web',
+        approvedTasks,
+        totalTasks,
+        pendingSubmissions,
+        progress: { approved: approvedTasks, total: totalTasks },
+        pendingReviewCount: pendingSubmissions,
         assignedAt: a.assignedAt,
-        lastActivityAt: a.assignedAt,
+        lastActivityAt,
       });
     }
   }
@@ -296,16 +693,40 @@ const getTrainerSubmissions = asyncHandler(async (req, res) => {
   const trainerId = req.user.id;
   const { page, limit, skip } = parsePagination(req.query, 10);
   const status = req.query.status;
+  const search = req.query.search ? String(req.query.search).trim() : null;
+  const sortParam = req.query.sort ? String(req.query.sort) : 'submittedAt:asc';
 
   const { enrollmentIds, teamIds } = await getTrainerActiveTargetIds(trainerId);
+  const or = buildTrainerSubmissionWhere(enrollmentIds, teamIds);
 
-  const where = {
-    ...(status && { reviewStatus: status }),
-    OR: [
-      { enrollmentId: { in: enrollmentIds } },
-      { taskProgress: { teamId: { in: teamIds } } },
-    ],
-  };
+  if (or.length === 0) {
+    return ok(res, paginatedResponse([], 0, page, limit));
+  }
+
+  const andClauses = [{ OR: or }];
+  if (status) {
+    andClauses.push({ reviewStatus: status });
+  }
+  if (search) {
+    andClauses.push({
+      OR: [
+        { submittedBy: { name: { contains: search, mode: 'insensitive' } } },
+        { submittedBy: { email: { contains: search, mode: 'insensitive' } } },
+        { taskProgress: { task: { title: { contains: search, mode: 'insensitive' } } } },
+        { taskProgress: { enrollment: { user: { name: { contains: search, mode: 'insensitive' } } } } },
+        { taskProgress: { enrollment: { user: { email: { contains: search, mode: 'insensitive' } } } } },
+        { taskProgress: { enrollment: { team: { name: { contains: search, mode: 'insensitive' } } } } },
+      ],
+    });
+  }
+
+  const where = { AND: andClauses };
+  const [sortField, sortDir] = sortParam.split(':');
+  const orderDir = sortDir === 'desc' ? 'desc' : 'asc';
+  const orderBy =
+    sortField === 'attemptNumber'
+      ? { attemptNumber: orderDir }
+      : { submittedAt: orderDir };
 
   const [total, submissions] = await Promise.all([
     prisma.taskSubmission.count({ where }),
@@ -320,12 +741,14 @@ const getTrainerSubmissions = asyncHandler(async (req, res) => {
               include: {
                 user: { select: { id: true, name: true, email: true } },
                 team: { select: { id: true, name: true } },
+                plan: { include: { designation: true, domain: true } },
+                project: true,
               },
             },
           },
         },
       },
-      orderBy: { submittedAt: 'asc' },
+      orderBy,
       skip,
       take: limit,
     }),
@@ -339,6 +762,7 @@ const getTrainerSubmissions = asyncHandler(async (req, res) => {
     return {
       _id: s.id,
       taskProgressId: s.taskProgressId,
+      enrollmentId: s.enrollmentId || tp?.enrollmentId || null,
       attemptNumber: s.attemptNumber,
       reviewStatus: s.reviewStatus,
       submittedAt: s.submittedAt,
@@ -348,12 +772,16 @@ const getTrainerSubmissions = asyncHandler(async (req, res) => {
       task: task
         ? { _id: task.id, title: task.title, sequence: task.sequence, dayNumber: task.dayNumber }
         : null,
-      student: enrollment?.user
-        ? { _id: enrollment.user.id, name: enrollment.user.name, email: enrollment.user.email }
-        : null,
+      student: enrollment?.team
+        ? null
+        : enrollment?.user
+          ? { _id: enrollment.user.id, name: enrollment.user.name, email: enrollment.user.email }
+          : null,
       team: enrollment?.team
         ? { _id: enrollment.team.id, name: enrollment.team.name }
         : null,
+      plan: planRef(enrollment?.plan),
+      project: projectRef(enrollment?.project),
     };
   });
 
@@ -377,6 +805,8 @@ const getTrainerSubmissionById = asyncHandler(async (req, res) => {
             include: {
               user: { select: { id: true, name: true, email: true } },
               team: { select: { id: true, name: true, repoUrl: true } },
+              plan: { include: { designation: true, domain: true } },
+              project: true,
             },
           },
         },
@@ -391,6 +821,44 @@ const getTrainerSubmissionById = asyncHandler(async (req, res) => {
     throw ApiError.forbidden('FORBIDDEN', NOT_ASSIGNED_MESSAGE);
   }
 
+  const [previousRaw, nextPendingId] = await Promise.all([
+    prisma.taskSubmission.findMany({
+      where: {
+        taskProgressId: submission.taskProgressId,
+        id: { not: submission.id },
+      },
+      include: {
+        submittedBy: { select: { id: true, name: true } },
+        review: { include: { trainer: { select: { id: true, name: true } } } },
+      },
+      orderBy: [{ attemptNumber: 'desc' }, { submittedAt: 'desc' }],
+    }),
+    findNextPendingForTrainer(req.user.id, submission.id),
+  ]);
+
+  const previousAttempts = previousRaw.map((prev) => ({
+    _id: prev.id,
+    taskProgressId: prev.taskProgressId,
+    attemptNumber: prev.attemptNumber,
+    description: prev.description,
+    githubUrl: prev.githubUrl,
+    screenshots: parseJsonArray(prev.screenshots),
+    reviewStatus: prev.reviewStatus,
+    submittedAt: prev.submittedAt,
+    submittedBy: prev.submittedBy ? { _id: prev.submittedBy.id, name: prev.submittedBy.name } : null,
+    review: prev.review
+      ? {
+          _id: prev.review.id,
+          decision: prev.review.decision,
+          feedback: prev.review.feedback,
+          reviewedAt: prev.review.reviewedAt,
+          trainer: prev.review.trainer
+            ? { _id: prev.review.trainer.id, name: prev.review.trainer.name }
+            : null,
+        }
+      : null,
+  }));
+
   const tp = submission.taskProgress;
   const task = tp?.task;
   const enrollment = tp?.enrollment;
@@ -398,12 +866,11 @@ const getTrainerSubmissionById = asyncHandler(async (req, res) => {
   ok(res, {
     _id: submission.id,
     taskProgressId: submission.taskProgressId,
+    enrollmentId: submission.enrollmentId || tp?.enrollmentId || null,
     attemptNumber: submission.attemptNumber,
     description: submission.description,
     githubUrl: submission.githubUrl,
-    screenshots: Array.isArray(submission.screenshots)
-      ? submission.screenshots
-      : JSON.parse(submission.screenshots || '[]'),
+    screenshots: parseJsonArray(submission.screenshots),
     reviewStatus: submission.reviewStatus,
     submittedAt: submission.submittedAt,
     submittedBy: submission.submittedBy
@@ -417,17 +884,26 @@ const getTrainerSubmissionById = asyncHandler(async (req, res) => {
           dayNumber: task.dayNumber,
           problemStatement: task.problemStatement,
           expectedOutcome: task.expectedOutcome,
-          acceptanceCriteria: Array.isArray(task.acceptanceCriteria) ? task.acceptanceCriteria : JSON.parse(task.acceptanceCriteria || '[]'),
+          acceptanceCriteria: parseJsonArray(task.acceptanceCriteria),
           starterRepoUrl: task.starterRepoUrl,
           estimatedHours: task.estimatedHours,
+          requiresTrainerReview: task.requiresTrainerReview,
         }
       : null,
-    student: enrollment?.user
-      ? { _id: enrollment.user.id, name: enrollment.user.name, email: enrollment.user.email }
-      : null,
+    student: enrollment?.team
+      ? null
+      : enrollment?.user
+        ? { _id: enrollment.user.id, name: enrollment.user.name, email: enrollment.user.email }
+        : null,
     team: enrollment?.team
       ? { _id: enrollment.team.id, name: enrollment.team.name, repoUrl: enrollment.team.repoUrl }
       : null,
+    plan: planRef(enrollment?.plan),
+    project: projectRef(enrollment?.project),
+    track: enrollment?.track || 'web',
+    previousAttempts,
+    automatedChecks: [],
+    nextPendingId,
     review: submission.review
       ? {
           _id: submission.review.id,
@@ -446,118 +922,16 @@ const reviewSubmission = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { decision, feedback } = req.body;
 
-  const submission = await prisma.taskSubmission.findUnique({
-    where: { id },
-    include: {
-      taskProgress: true,
-    },
+  const result = await executeSubmissionReview({
+    reviewer: req.user,
+    submissionId: id,
+    decision,
+    feedback,
+    ip: req.ip,
+    allowAdminOverride: false,
   });
 
-  if (!submission) throw ApiError.notFound('Submission not found.');
-
-  const canAccess = await trainerCanAccessSubmission(req.user.id, submission);
-  if (!canAccess && !req.user.roles.includes(ROLES.ADMIN)) {
-    throw ApiError.forbidden('FORBIDDEN', NOT_ASSIGNED_MESSAGE);
-  }
-
-  if (submission.submittedById === req.user.id) {
-    throw ApiError.forbidden('FORBIDDEN', 'You cannot review your own work.');
-  }
-
-  if (submission.reviewStatus !== REVIEW_STATUS.PENDING) {
-    throw ApiError.conflict('ALREADY_REVIEWED', 'This submission has already been reviewed.');
-  }
-
-  const normalizedDecision = String(decision || '').trim().toUpperCase();
-  const text = String(feedback || '').trim();
-
-  if (!Object.values(REVIEW_DECISION).includes(normalizedDecision)) {
-    throw ApiError.validationError([{ field: 'decision', message: 'Choose approve, request changes or reject.' }]);
-  }
-
-  if (normalizedDecision !== REVIEW_DECISION.APPROVED && text.length < MIN_FEEDBACK_LENGTH) {
-    throw ApiError.validationError([
-      {
-        field: 'feedback',
-        message: text
-          ? `Write at least ${MIN_FEEDBACK_LENGTH} characters so the student knows what to change.`
-          : 'Feedback is required when you request changes or reject.',
-      },
-    ]);
-  }
-
-  // Create or upsert review
-  const review = await prisma.review.create({
-    data: {
-      submissionId: submission.id,
-      trainerId: req.user.id,
-      decision: normalizedDecision,
-      feedback: text,
-    },
-    include: { trainer: { select: { id: true, name: true } } },
-  });
-
-  // Update submission status
-  await prisma.taskSubmission.update({
-    where: { id: submission.id },
-    data: { reviewStatus: normalizedDecision },
-  });
-
-  // Update task progress
-  const now = new Date();
-  if (normalizedDecision === REVIEW_DECISION.APPROVED) {
-    await prisma.taskProgress.update({
-      where: { id: submission.taskProgressId },
-      data: {
-        status: TASK_STATUS.APPROVED,
-        approvedAt: now,
-        lastReviewStatus: REVIEW_STATUS.APPROVED,
-      },
-    });
-
-    const tp = submission.taskProgress;
-    await unlockDependents(tp.enrollmentId, tp.teamId);
-    await checkCertificateEligibility(tp.enrollmentId, tp.teamId);
-  } else {
-    await prisma.taskProgress.update({
-      where: { id: submission.taskProgressId },
-      data: {
-        status: TASK_STATUS.CHANGES_REQUESTED,
-        lastReviewStatus: normalizedDecision,
-      },
-    });
-  }
-
-  // Next pending submission for trainer
-  const { enrollmentIds, teamIds } = await getTrainerActiveTargetIds(req.user.id);
-  const nextPending = await prisma.taskSubmission.findFirst({
-    where: {
-      id: { not: submission.id },
-      reviewStatus: REVIEW_STATUS.PENDING,
-      OR: [
-        { enrollmentId: { in: enrollmentIds } },
-        { taskProgress: { teamId: { in: teamIds } } },
-      ],
-    },
-    orderBy: { submittedAt: 'asc' },
-  });
-
-  ok(res, {
-    review: {
-      _id: review.id,
-      submissionId: review.submissionId,
-      trainerId: review.trainerId,
-      decision: review.decision,
-      feedback: review.feedback,
-      reviewedAt: review.reviewedAt,
-      trainer: review.trainer ? { _id: review.trainer.id, name: review.trainer.name } : null,
-    },
-    submission: {
-      _id: submission.id,
-      reviewStatus: normalizedDecision,
-    },
-    nextPendingId: nextPending ? nextPending.id : null,
-  });
+  ok(res, result);
 });
 
 module.exports = {
@@ -566,4 +940,7 @@ module.exports = {
   getTrainerSubmissions,
   getTrainerSubmissionById,
   reviewSubmission,
+  executeSubmissionReview,
+  unlockDependents,
+  checkCertificateEligibility,
 };

@@ -19,6 +19,8 @@ const {
   MEMBER_STATUS,
 } = require('../../common/constants');
 const { sendPaymentSuccessEmail } = require('../../libs/email');
+const { computeTeamReadiness } = require('../teams/teams.controller');
+const { notifyAdmins } = require('../notifications/services/notifications.service');
 const logger = require('../../libs/logger');
 
 const QUOTE_TTL_HOURS = 24;
@@ -29,6 +31,7 @@ function planRef(plan) {
     _id: plan.id,
     durationMonths: plan.durationMonths,
     basePrice: plan.basePrice,
+    discountPercent: Number(plan.discountPercent) || 0,
     currency: plan.currency || 'INR',
     designation: plan.designation
       ? { _id: plan.designation.id, name: plan.designation.name, slug: plan.designation.slug }
@@ -39,10 +42,57 @@ function planRef(plan) {
   };
 }
 
+function projectSummaryDto(project) {
+  if (!project) return null;
+  return {
+    _id: project.id,
+    title: project.title,
+    slug: project.slug,
+    description: project.description || '',
+    starterRepoUrl: project.starterRepoUrl || '',
+    appStarterRepoUrl: project.appStarterRepoUrl || '',
+    technologies: Array.isArray(project.technologies) ? project.technologies : [],
+    webTechStack: Array.isArray(project.webTechStack) ? project.webTechStack : [],
+    webDeliverables: project.webDeliverables || '',
+    appTechStack: Array.isArray(project.appTechStack) ? project.appTechStack : [],
+    appDeliverables: project.appDeliverables || '',
+    domain: project.domain
+      ? { _id: project.domain.id, name: project.domain.name, slug: project.domain.slug }
+      : null,
+  };
+}
+
+function buildMentorDto(enrollment) {
+  const activeAssignment =
+    enrollment.trainerAssignments?.find((a) => a.active && a.trainer) ||
+    enrollment.team?.trainerAssignments?.find((a) => a.active && a.trainer) ||
+    null;
+
+  const trainer = activeAssignment?.trainer;
+  if (!trainer) return null;
+
+  const tp = trainer.trainerProfile;
+  return {
+    _id: trainer.id,
+    name: trainer.name,
+    email: trainer.email,
+    avatarUrl: trainer.avatarUrl || null,
+    designation: trainer.headline || (tp?.domain ? `${tp.domain} Mentor` : 'Engineering Mentor'),
+    organization: tp?.organization || trainer.organization || 'ALFRE Engineering Network',
+    bio: tp?.bio || trainer.bio || 'Assigned internship mentor responsible for reviewing your GitHub submissions and guiding milestone sign-off.',
+    domain: tp?.domain || null,
+    experience: tp?.experience || null,
+    linkedinUrl: tp?.linkedinUrl || trainer.linkedinUrl || null,
+    specialties: [tp?.domain, 'Code Review', 'GitHub Workflows'].filter(Boolean),
+    availability: 'Assigned Reviewer',
+  };
+}
+
 function quoteDto(quote) {
   if (!quote) return null;
   return {
     _id: quote.id,
+    quoteId: quote.id,
     userId: quote.userId,
     planId: quote.planId,
     enrollmentType: quote.enrollmentType,
@@ -79,29 +129,7 @@ function termsAcceptanceDto(acceptance) {
 function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, certificate) {
   if (!enrollment) return null;
 
-  const directAssignment = enrollment.trainerAssignments?.find((a) => a.active && a.trainer);
-  const teamAssignment = team?.trainerAssignments?.find((a) => a.active && a.trainer);
-  const activeAssignment = directAssignment || teamAssignment || null;
-  const trainer = activeAssignment?.trainer;
-
-  const mentor = trainer
-    ? {
-        id: trainer.id,
-        _id: trainer.id,
-        name: trainer.name,
-        email: trainer.email,
-        avatarUrl: trainer.avatarUrl || null,
-        designation:
-          trainer.trainerProfile?.headline || trainer.headline || 'Assigned Project Mentor',
-        organization:
-          trainer.trainerProfile?.organization || trainer.organization || 'ALFRE Engineering Network',
-        bio:
-          trainer.trainerProfile?.bio ||
-          trainer.bio ||
-          'Assigned Mentor for code reviews and milestone guidance.',
-        assignedAt: activeAssignment.assignedAt,
-      }
-    : null;
+  const mentor = buildMentorDto(enrollment);
 
   return {
     _id: enrollment.id,
@@ -124,6 +152,10 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
     termsAcceptedVersion: enrollment.termsAcceptedVersion || null,
     progress: progressCount || { approved: 0, total: 0 },
     certificateId: certificate?.id || null,
+    track: enrollment.track || 'web',
+    projectId: enrollment.projectId || null,
+    project: enrollment.project ? projectSummaryDto(enrollment.project) : null,
+    projectAssignedAt: enrollment.projectAssignedAt || null,
     createdAt: enrollment.createdAt,
     activatedAt: enrollment.activatedAt || null,
     completedAt: enrollment.completedAt || null,
@@ -215,7 +247,8 @@ const createQuote = asyncHandler(async (req, res) => {
     throw ApiError.notFound('Plan not found.');
   }
 
-  // Check student assessment attempt
+  // Assessment is optional (direct pricing & direct enrollment enabled);
+  // if the student has an attempt, honor the better discount between plan & attempt.
   const attempt = await prisma.assessmentAttempt.findUnique({
     where: {
       userId_designationId: {
@@ -224,14 +257,6 @@ const createQuote = asyncHandler(async (req, res) => {
       },
     },
   });
-
-  if (!attempt) {
-    throw ApiError.unprocessable(
-      'ASSESSMENT_REQUIRED',
-      'Take the assessment before getting a quote.',
-      [{ field: 'planId', message: 'Take the assessment before getting a quote.' }],
-    );
-  }
 
   let team = null;
   if (teamId) {
@@ -256,8 +281,10 @@ const createQuote = asyncHandler(async (req, res) => {
     }
   }
 
-  // Team quote discount is always 0%
-  const discountPercent = team ? 0 : Number(attempt.discountPercent) || 0;
+  // Team quote discount is always 0%; individual uses direct plan discount (or assessment discount if higher)
+  const planDiscount = Number(plan.discountPercent) || 0;
+  const attemptDiscount = Number(attempt?.discountPercent) || 0;
+  const discountPercent = team ? 0 : Math.max(planDiscount, attemptDiscount);
   const payableAmount = Math.round(plan.basePrice * (1 - discountPercent / 100));
   const expiresAt = new Date(Date.now() + QUOTE_TTL_HOURS * 60 * 60 * 1000);
 
@@ -267,7 +294,7 @@ const createQuote = asyncHandler(async (req, res) => {
       planId: plan.id,
       enrollmentType: team ? ENROLLMENT_TYPE.TEAM : ENROLLMENT_TYPE.INDIVIDUAL,
       teamId: team ? team.id : null,
-      attemptId: attempt.id,
+      attemptId: attempt ? attempt.id : null,
       basePrice: plan.basePrice,
       discountPercent,
       payableAmount,
@@ -282,7 +309,8 @@ const createQuote = asyncHandler(async (req, res) => {
 // ─── Enrollment Handlers ─────────────────────────────────────────────────────
 
 const createEnrollment = asyncHandler(async (req, res) => {
-  const { quoteId } = req.body;
+  const { quoteId, track } = req.body;
+  const normalizedTrack = String(track || 'web').toLowerCase() === 'app' ? 'app' : 'web';
   if (!quoteId) {
     throw ApiError.validationError([{ field: 'quoteId', message: 'Get a price quote first.' }]);
   }
@@ -376,12 +404,13 @@ const createEnrollment = asyncHandler(async (req, res) => {
     return created(res, enrollmentDto(updated, null, null, quote.plan, null, null));
   }
 
-  // Find latest published schedule template
+  // Find latest published generic schedule template (exclude project-specific templates)
   const template = await prisma.scheduleTemplate.findFirst({
     where: {
       designationId: quote.plan.designationId,
       domainId: quote.plan.domainId,
       durationMonths: quote.plan.durationMonths,
+      projectId: null,
       status: SCHEDULE_STATUS.PUBLISHED,
     },
     orderBy: { version: 'desc' },
@@ -397,6 +426,7 @@ const createEnrollment = asyncHandler(async (req, res) => {
       scheduleTemplateId: template ? template.id : null,
       scheduleVersion: template ? template.version : null,
       priceSnapshot,
+      track: normalizedTrack,
       status: ENROLLMENT_STATUS.PENDING_PAYMENT,
     },
   });
@@ -418,22 +448,14 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
     where,
     include: {
       plan: { include: { designation: true, domain: true } },
+      project: { include: { domain: true } },
       team: {
         include: {
           trainerAssignments: {
             where: { active: true },
             include: {
               trainer: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  avatarUrl: true,
-                  headline: true,
-                  bio: true,
-                  organization: true,
-                  trainerProfile: true,
-                },
+                include: { trainerProfile: true },
               },
             },
           },
@@ -446,16 +468,7 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
         where: { active: true },
         include: {
           trainer: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatarUrl: true,
-              headline: true,
-              bio: true,
-              organization: true,
-              trainerProfile: true,
-            },
+            include: { trainerProfile: true },
           },
         },
       },
@@ -465,11 +478,26 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
     take: limit,
   });
 
+  // Load shared team TaskProgress for any team enrollments
+  const teamIds = [...new Set(enrollments.map((e) => e.teamId).filter(Boolean))];
+  const teamProgressMap = new Map();
+  if (teamIds.length > 0) {
+    const teamProgress = await prisma.taskProgress.findMany({
+      where: { teamId: { in: teamIds } },
+    });
+    teamProgress.forEach((p) => {
+      const list = teamProgressMap.get(p.teamId) || [];
+      list.push(p);
+      teamProgressMap.set(p.teamId, list);
+    });
+  }
+
   const items = enrollments.map((e) => {
     const latestPayment = e.payments[0] || null;
+    const scopeProgress = e.teamId ? (teamProgressMap.get(e.teamId) || []) : e.taskProgress;
     const progressCount = {
-      approved: e.taskProgress.filter((p) => p.status === TASK_STATUS.APPROVED).length,
-      total: e.taskProgress.length,
+      approved: scopeProgress.filter((p) => p.status === TASK_STATUS.APPROVED).length,
+      total: scopeProgress.length,
     };
     return enrollmentDto(e, latestPayment, e.team, e.plan, progressCount, e.certificate);
   });
@@ -484,6 +512,7 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
     where: { id },
     include: {
       plan: { include: { designation: true, domain: true } },
+      project: { include: { domain: true } },
       team: {
         include: {
           members: true,
@@ -491,16 +520,7 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
             where: { active: true },
             include: {
               trainer: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  avatarUrl: true,
-                  headline: true,
-                  bio: true,
-                  organization: true,
-                  trainerProfile: true,
-                },
+                include: { trainerProfile: true },
               },
             },
           },
@@ -513,16 +533,7 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
         where: { active: true },
         include: {
           trainer: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatarUrl: true,
-              headline: true,
-              bio: true,
-              organization: true,
-              trainerProfile: true,
-            },
+            include: { trainerProfile: true },
           },
         },
       },
@@ -538,9 +549,12 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
   }
 
   const latestPayment = enrollment.payments[0] || null;
+  const scopeProgress = enrollment.teamId
+    ? await prisma.taskProgress.findMany({ where: { teamId: enrollment.teamId } })
+    : enrollment.taskProgress;
   const progressCount = {
-    approved: enrollment.taskProgress.filter((p) => p.status === TASK_STATUS.APPROVED).length,
-    total: enrollment.taskProgress.length,
+    approved: scopeProgress.filter((p) => p.status === TASK_STATUS.APPROVED).length,
+    total: scopeProgress.length,
   };
 
   ok(res, enrollmentDto(enrollment, latestPayment, enrollment.team, enrollment.plan, progressCount, enrollment.certificate));
@@ -659,6 +673,7 @@ async function activateEnrollmentEngine(enrollmentId) {
         designationId: enrollment.plan.designationId,
         domainId: enrollment.plan.domainId,
         durationMonths: enrollment.plan.durationMonths,
+        projectId: null,
         status: SCHEDULE_STATUS.PUBLISHED,
       },
       orderBy: { version: 'desc' },
@@ -676,8 +691,29 @@ async function activateEnrollmentEngine(enrollmentId) {
     },
   });
 
-  // Create progress records for tasks
-  if (template) {
+  // For team enrollments, only activate the team and seed shared tasks once readiness is met
+  let shouldSeedTasks = true;
+  if (enrollment.teamId) {
+    const team = await prisma.team.findUnique({
+      where: { id: enrollment.teamId },
+      include: { members: { include: { user: true } }, plan: true },
+    });
+    if (team) {
+      const readiness = await computeTeamReadiness(team);
+      if (readiness.ready) {
+        await prisma.team.update({
+          where: { id: enrollment.teamId },
+          data: { status: TEAM_STATUS.ACTIVE },
+        });
+      } else {
+        shouldSeedTasks = false;
+      }
+    }
+  }
+
+  // Create progress records for tasks (deduplicating by teamId for team enrollments)
+  // Note: Projects are manually assigned by Admin via /admin/project-assignments (no auto-assign).
+  if (template && shouldSeedTasks) {
     const tasks = await prisma.taskDefinition.findMany({
       where: { templateId: template.id },
       orderBy: { sequence: 'asc' },
@@ -696,10 +732,9 @@ async function activateEnrollmentEngine(enrollmentId) {
       const initialStatus = validPrereqs.length > 0 ? TASK_STATUS.LOCKED : TASK_STATUS.AVAILABLE;
 
       const existingProgress = await prisma.taskProgress.findFirst({
-        where: {
-          enrollmentId: enrollment.id,
-          taskId: task.id,
-        },
+        where: enrollment.teamId
+          ? { teamId: enrollment.teamId, taskId: task.id }
+          : { enrollmentId: enrollment.id, taskId: task.id },
       });
 
       if (!existingProgress) {
@@ -715,13 +750,14 @@ async function activateEnrollmentEngine(enrollmentId) {
     }
   }
 
-  // If team enrollment, check and activate team
-  if (enrollment.teamId) {
-    await prisma.team.update({
-      where: { id: enrollment.teamId },
-      data: { status: TEAM_STATUS.ACTIVE },
-    });
-  }
+  // Alert admins that a new paid enrollment needs manual project & trainer assignment
+  await notifyAdmins({
+    type: 'ENROLLMENT_NEEDS_ALLOCATION',
+    title: `New active enrollment: ${enrollment.user?.name || 'Student'}`,
+    message: `${enrollment.user?.name || 'A student'} completed payment. Assign their capstone project and mentor.`,
+    link: '/admin/project-assignments',
+    metadata: { enrollmentId: enrollment.id, userId: enrollment.userId },
+  });
 
   // Queue / Send payment success email
   if (enrollment.user) {

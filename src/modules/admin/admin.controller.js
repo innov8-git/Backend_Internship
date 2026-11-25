@@ -29,6 +29,11 @@ const { getStorage } = require('../../libs/storage');
 const { streamResumeFile } = require('../trainer-applications/trainer-applications.controller');
 const { sendCertificateIssuedEmail, sendTrainerWelcomeEmail } = require('../../libs/email');
 const { invalidateAuthUserCache } = require('../../common/guards');
+const { executeSubmissionReview } = require('../trainer/trainer.controller');
+const {
+  createNotification,
+  createNotificationsForUsers,
+} = require('../notifications/services/notifications.service');
 const logger = require('../../libs/logger');
 
 function userDto(user) {
@@ -109,7 +114,7 @@ const getAdminStats = asyncHandler(async (_req, res) => {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   // Run all aggregate/list queries in parallel across the connection pool
-  const [users, enrollments, payments, certificates, pendingSubmissions] = await Promise.all([
+  const [users, enrollments, payments, certificates, pendingSubmissions, escalatedSubmissions, unassignedPending] = await Promise.all([
     prisma.user.findMany({
       select: {
         status: true,
@@ -118,8 +123,16 @@ const getAdminStats = asyncHandler(async (_req, res) => {
     }),
     prisma.enrollment.findMany({
       select: {
+        id: true,
         status: true,
+        projectId: true,
         plan: { select: { designation: { select: { name: true } } } },
+        trainerAssignments: { where: { active: true }, select: { id: true } },
+        team: {
+          select: {
+            trainerAssignments: { where: { active: true }, select: { id: true } },
+          },
+        },
       },
     }),
     prisma.payment.findMany({
@@ -130,6 +143,23 @@ const getAdminStats = asyncHandler(async (_req, res) => {
     }),
     prisma.taskSubmission.count({
       where: { reviewStatus: REVIEW_STATUS.PENDING },
+    }),
+    prisma.taskSubmission.count({
+      where: { reviewStatus: REVIEW_STATUS.ESCALATED },
+    }),
+    prisma.taskSubmission.count({
+      where: {
+        reviewStatus: REVIEW_STATUS.PENDING,
+        taskProgress: {
+          enrollment: {
+            trainerAssignments: { none: { active: true } },
+            OR: [
+              { teamId: null },
+              { team: { trainerAssignments: { none: { active: true } } } },
+            ],
+          },
+        },
+      },
     }),
   ]);
 
@@ -172,6 +202,16 @@ const getAdminStats = asyncHandler(async (_req, res) => {
   const hasRole = (u, roleName) =>
     Array.isArray(u.userRoles) && u.userRoles.some((ur) => ur.role?.name === roleName);
 
+  const liveEnrollments = enrollments.filter((e) =>
+    [ENROLLMENT_STATUS.ACTIVE, ENROLLMENT_STATUS.IN_PROGRESS].includes(e.status),
+  );
+  const unassignedProject = liveEnrollments.filter((e) => !e.projectId).length;
+  const unassignedTrainer = liveEnrollments.filter(
+    (e) =>
+      (e.trainerAssignments?.length || 0) === 0 &&
+      (e.team?.trainerAssignments?.length || 0) === 0,
+  ).length;
+
   ok(res, {
     users: {
       total: users.length,
@@ -187,6 +227,8 @@ const getAdminStats = asyncHandler(async (_req, res) => {
       inProgress: enrollments.filter((e) => e.status === ENROLLMENT_STATUS.IN_PROGRESS).length,
       completed: enrollments.filter((e) => e.status === ENROLLMENT_STATUS.COMPLETED).length,
       cancelled: enrollments.filter((e) => e.status === ENROLLMENT_STATUS.CANCELLED).length,
+      unassignedProject,
+      unassignedTrainer,
     },
     revenue: {
       total: totalRevenue,
@@ -206,6 +248,8 @@ const getAdminStats = asyncHandler(async (_req, res) => {
     },
     submissions: {
       pending: pendingSubmissions,
+      escalated: escalatedSubmissions,
+      unassignedPending,
     },
     revenueByMonth,
     enrollmentsByDesignation,
@@ -592,8 +636,17 @@ const getAdminEnrollmentById = asyncHandler(async (req, res) => {
     where: { id },
     include: {
       user: true,
-      team: { include: { members: true } },
+      team: {
+        include: {
+          members: true,
+          trainerAssignments: {
+            where: { active: true },
+            include: { trainer: true },
+          },
+        },
+      },
       plan: { include: { designation: true, domain: true } },
+      project: true,
       payments: {
         include: { events: { orderBy: { processedAt: 'asc' } } },
         orderBy: { createdAt: 'desc' },
@@ -609,8 +662,13 @@ const getAdminEnrollmentById = asyncHandler(async (req, res) => {
 
   if (!enrollment) throw ApiError.notFound('Enrollment not found.');
 
-  const progress = enrollment.taskProgress || [];
-  const activeTrainer = enrollment.trainerAssignments[0]?.trainer || null;
+  const progress = enrollment.teamId
+    ? await prisma.taskProgress.findMany({ where: { teamId: enrollment.teamId }, include: { task: true } })
+    : enrollment.taskProgress || [];
+  const activeTrainer =
+    enrollment.trainerAssignments[0]?.trainer ||
+    enrollment.team?.trainerAssignments?.[0]?.trainer ||
+    null;
 
   ok(res, {
     _id: enrollment.id,
@@ -653,6 +711,8 @@ const getAdminEnrollmentById = asyncHandler(async (req, res) => {
       })),
     })),
     trainer: activeTrainer ? { _id: activeTrainer.id, name: activeTrainer.name, email: activeTrainer.email } : null,
+    project: enrollment.project ? { _id: enrollment.project.id, title: enrollment.project.title, slug: enrollment.project.slug } : null,
+    track: enrollment.track || 'web',
     certificate: enrollment.certificate ? { _id: enrollment.certificate.id, certificateNo: enrollment.certificate.certificateNo, status: enrollment.certificate.status } : null,
     createdAt: enrollment.createdAt,
     activatedAt: enrollment.activatedAt,
@@ -1165,6 +1225,40 @@ async function assignTrainerToTarget({ trainerId, enrollmentId, teamId, actorId,
     ip,
   });
 
+  // Notify trainer and student/team members
+  const targetLabel = assignment.team
+    ? `team ${assignment.team.name}`
+    : assignment.enrollment?.user?.name || 'a student';
+
+  await createNotification({
+    userId: trainerId,
+    type: 'TRAINER_ASSIGNED',
+    title: `New assignment: ${targetLabel}`,
+    message: `You have been assigned to review submissions for ${targetLabel}.`,
+    link: '/trainer',
+    metadata: { assignmentId: assignment.id, enrollmentId: assignment.enrollmentId, teamId: assignment.teamId },
+  });
+
+  if (assignment.enrollment?.user?.id) {
+    await createNotification({
+      userId: assignment.enrollment.user.id,
+      type: 'MENTOR_ASSIGNED',
+      title: `Mentor assigned: ${assignment.trainer?.name || 'Trainer'}`,
+      message: `${assignment.trainer?.name || 'A trainer'} has been assigned as your internship mentor and code reviewer.`,
+      link: '/dashboard',
+      metadata: { trainerId, enrollmentId: assignment.enrollmentId },
+    });
+  } else if (assignment.team?.members?.length) {
+    const teamUserIds = assignment.team.members.map((m) => m.userId).filter(Boolean);
+    await createNotificationsForUsers(teamUserIds, {
+      type: 'MENTOR_ASSIGNED',
+      title: `Team mentor assigned: ${assignment.trainer?.name || 'Trainer'}`,
+      message: `${assignment.trainer?.name || 'A trainer'} has been assigned to review team ${assignment.team.name}.`,
+      link: '/dashboard',
+      metadata: { trainerId, teamId: assignment.teamId },
+    });
+  }
+
   return {
     _id: assignment.id,
     trainerId: assignment.trainerId,
@@ -1670,12 +1764,20 @@ const updateTrainerStatus = asyncHandler(async (req, res) => {
           data: { isApproved: false },
         });
       }
+      if (trainerRole) {
+        await tx.userRole.deleteMany({
+          where: { userId: user.id, roleId: trainerRole.id },
+        });
+      }
       await tx.trainerAssignment.updateMany({
         where: { trainerId: user.id, active: true },
         data: { active: false, unassignedAt: new Date() },
       });
     }
   });
+
+  // Ensure role changes take effect immediately on active JWTs
+  invalidateAuthUserCache(user.id);
 
   await addAudit({
     actorId: req.user.id,
@@ -1848,6 +1950,154 @@ const deleteTrainer = asyncHandler(async (req, res) => {
   );
 });
 
+// ─── Submissions & Escalations Oversight ─────────────────────────────────────
+
+const listAdminSubmissions = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query, 15);
+  const { status, unassigned, search } = req.query;
+  const onlyUnassigned = unassigned === 'true';
+
+  const andClauses = [];
+  if (status) {
+    andClauses.push({ reviewStatus: String(status) });
+  }
+  if (onlyUnassigned) {
+    andClauses.push({
+      taskProgress: {
+        enrollment: {
+          trainerAssignments: { none: { active: true } },
+          OR: [
+            { teamId: null },
+            { team: { trainerAssignments: { none: { active: true } } } },
+          ],
+        },
+      },
+    });
+  }
+  if (search) {
+    const q = String(search).trim();
+    andClauses.push({
+      OR: [
+        { submittedBy: { name: { contains: q, mode: 'insensitive' } } },
+        { submittedBy: { email: { contains: q, mode: 'insensitive' } } },
+        { taskProgress: { task: { title: { contains: q, mode: 'insensitive' } } } },
+        { taskProgress: { enrollment: { user: { name: { contains: q, mode: 'insensitive' } } } } },
+        { taskProgress: { enrollment: { team: { name: { contains: q, mode: 'insensitive' } } } } },
+      ],
+    });
+  }
+
+  const where = andClauses.length > 0 ? { AND: andClauses } : {};
+
+  const [total, submissions] = await Promise.all([
+    prisma.taskSubmission.count({ where }),
+    prisma.taskSubmission.findMany({
+      where,
+      include: {
+        submittedBy: { select: { id: true, name: true, email: true } },
+        review: { include: { trainer: { select: { id: true, name: true } } } },
+        taskProgress: {
+          include: {
+            task: true,
+            enrollment: {
+              include: {
+                user: { select: { id: true, name: true, email: true } },
+                team: {
+                  include: {
+                    trainerAssignments: {
+                      where: { active: true },
+                      include: { trainer: { select: { id: true, name: true, email: true } } },
+                    },
+                  },
+                },
+                plan: { include: { designation: true, domain: true } },
+                project: true,
+                trainerAssignments: {
+                  where: { active: true },
+                  include: { trainer: { select: { id: true, name: true, email: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { submittedAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+  ]);
+
+  const rows = submissions.map((s) => {
+    const tp = s.taskProgress;
+    const enrollment = tp?.enrollment;
+    const activeTrainer =
+      enrollment?.trainerAssignments?.[0]?.trainer ||
+      enrollment?.team?.trainerAssignments?.[0]?.trainer ||
+      null;
+
+    return {
+      _id: s.id,
+      taskProgressId: s.taskProgressId,
+      enrollmentId: s.enrollmentId || tp?.enrollmentId || null,
+      attemptNumber: s.attemptNumber,
+      description: s.description,
+      githubUrl: s.githubUrl,
+      screenshots: Array.isArray(s.screenshots) ? s.screenshots : [],
+      reviewStatus: s.reviewStatus,
+      submittedAt: s.submittedAt,
+      submittedBy: s.submittedBy
+        ? { _id: s.submittedBy.id, name: s.submittedBy.name, email: s.submittedBy.email }
+        : null,
+      student: enrollment?.user
+        ? { _id: enrollment.user.id, name: enrollment.user.name, email: enrollment.user.email }
+        : null,
+      team: enrollment?.team ? { _id: enrollment.team.id, name: enrollment.team.name } : null,
+      task: tp?.task
+        ? { _id: tp.task.id, title: tp.task.title, sequence: tp.task.sequence, dayNumber: tp.task.dayNumber }
+        : null,
+      plan: enrollment?.plan
+        ? {
+            _id: enrollment.plan.id,
+            durationMonths: enrollment.plan.durationMonths,
+            designation: enrollment.plan.designation ? { _id: enrollment.plan.designation.id, name: enrollment.plan.designation.name } : null,
+            domain: enrollment.plan.domain ? { _id: enrollment.plan.domain.id, name: enrollment.plan.domain.name } : null,
+          }
+        : null,
+      project: enrollment?.project ? { _id: enrollment.project.id, title: enrollment.project.title } : null,
+      assignedTrainer: activeTrainer
+        ? { _id: activeTrainer.id, name: activeTrainer.name, email: activeTrainer.email }
+        : null,
+      review: s.review
+        ? {
+            _id: s.review.id,
+            decision: s.review.decision,
+            feedback: s.review.feedback,
+            reviewedAt: s.review.reviewedAt,
+            trainer: s.review.trainer ? { _id: s.review.trainer.id, name: s.review.trainer.name } : null,
+          }
+        : null,
+    };
+  });
+
+  ok(res, paginatedResponse(rows, total, page, limit));
+});
+
+const reviewAdminSubmission = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { decision, feedback } = req.body;
+
+  const result = await executeSubmissionReview({
+    reviewer: req.user,
+    submissionId: id,
+    decision,
+    feedback,
+    ip: req.ip,
+    allowAdminOverride: true,
+  });
+
+  ok(res, result);
+});
+
 module.exports = {
   getAdminStats,
   listUsers,
@@ -1855,6 +2105,8 @@ module.exports = {
   updateUserStatus,
   listAdminEnrollments,
   getAdminEnrollmentById,
+  listAdminSubmissions,
+  reviewAdminSubmission,
   listAdminPayments,
   getAdminPaymentById,
   listAdminCertificates,
