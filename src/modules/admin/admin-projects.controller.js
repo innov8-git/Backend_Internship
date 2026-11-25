@@ -11,8 +11,18 @@ const {
   paginatedResponse,
   uniqueSlug,
 } = require('../../utils');
-const { PUBLISH_STATUS } = require('../../common/constants');
+const { PUBLISH_STATUS, MEMBER_STATUS } = require('../../common/constants');
 const { addAudit } = require('../audit-log/audit-log.service');
+const {
+  syncProjectTasksToEnrollment,
+  syncProjectTasksToAssignedEnrollments,
+} = require('./services/project-task-sync.service');
+const {
+  createNotification,
+  createNotificationsForUsers,
+} = require('../notifications/services/notifications.service');
+const { sendProjectAssignedEmail } = require('../../libs/email');
+const logger = require('../../libs/logger');
 
 function projectDto(project) {
   if (!project) return null;
@@ -187,6 +197,7 @@ const createProject = asyncHandler(async (req, res) => {
     durationsSupported,
     isDefault,
     status,
+    taskTemplates,
   } = req.body;
 
   const details = [];
@@ -250,6 +261,7 @@ const createProject = asyncHandler(async (req, res) => {
           : [1, 2, 3, 6],
       isDefault: Boolean(isDefault),
       status: status === PUBLISH_STATUS.DRAFT ? PUBLISH_STATUS.DRAFT : PUBLISH_STATUS.PUBLISHED,
+      ...(taskTemplates !== undefined && { taskTemplates }),
       createdBy: req.user.id,
       updatedBy: req.user.id,
     },
@@ -301,6 +313,7 @@ const updateProject = asyncHandler(async (req, res) => {
     durationsSupported,
     isDefault,
     status,
+    taskTemplates,
   } = req.body;
 
   const details = [];
@@ -370,6 +383,7 @@ const updateProject = asyncHandler(async (req, res) => {
           : current.durationsSupported,
       isDefault: isDefault !== undefined ? Boolean(isDefault) : current.isDefault,
       status: status !== undefined ? status : current.status,
+      ...(taskTemplates !== undefined && { taskTemplates }),
       updatedBy: req.user.id,
     },
     include: {
@@ -377,6 +391,14 @@ const updateProject = asyncHandler(async (req, res) => {
       designation: true,
     },
   });
+
+  if (taskTemplates !== undefined) {
+    try {
+      await syncProjectTasksToAssignedEnrollments(updated.id, req.user.id);
+    } catch (err) {
+      logger.warn(`[AdminProjects] Failed to sync updated tasks for project ${updated.id}: ${err.message}`);
+    }
+  }
 
   await addAudit({
     actorId: req.user.id,
@@ -560,10 +582,49 @@ const assignProject = asyncHandler(async (req, res) => {
     },
     include: {
       user: true,
+      team: { include: { members: { where: { status: MEMBER_STATUS.JOINED }, include: { user: true } } } },
       plan: { include: { domain: true, designation: true } },
       project: { include: { domain: true, designation: true } },
     },
   });
+
+  // Materialize project tasks & schedule onto the student's (or team's) enrollment
+  const syncResult = await syncProjectTasksToEnrollment(updatedEnrollment.id, project, {
+    actorId: req.user.id,
+    track: updatedEnrollment.track,
+  });
+
+  // Notify student (or all joined team members)
+  const recipients = updatedEnrollment.team?.members?.length
+    ? updatedEnrollment.team.members.map((m) => m.user).filter(Boolean)
+    : updatedEnrollment.user
+      ? [updatedEnrollment.user]
+      : [];
+
+  if (recipients.length > 0) {
+    await createNotificationsForUsers(
+      recipients.map((u) => u.id),
+      {
+        type: 'PROJECT_ASSIGNED',
+        title: `Project assigned: ${project.title}`,
+        message: `${syncResult.taskCount} task${syncResult.taskCount === 1 ? '' : 's'} are now available on your task board (${updatedEnrollment.track === 'app' ? 'Mobile App' : 'Web Development'} track).`,
+        link: '/tasks',
+        metadata: { enrollmentId: updatedEnrollment.id, projectId: project.id, taskCount: syncResult.taskCount },
+      },
+    );
+
+    recipients.forEach((u) => {
+      if (!u.email) return;
+      sendProjectAssignedEmail({
+        to: u.email,
+        name: u.name,
+        projectTitle: project.title,
+        domainName: project.domain?.name || '',
+        track: updatedEnrollment.track || 'web',
+        taskCount: syncResult.taskCount,
+      }).catch((err) => logger.warn(`[AdminProjects] Failed to email ${u.email}: ${err.message}`));
+    });
+  }
 
   await addAudit({
     actorId: req.user.id,
@@ -575,11 +636,15 @@ const assignProject = asyncHandler(async (req, res) => {
       projectTitle: project.title,
       studentId: enrollment.userId,
       track: updatedEnrollment.track,
+      taskCount: syncResult.taskCount,
     },
     ip: req.ip,
   });
 
-  ok(res, assignmentDto(updatedEnrollment));
+  ok(res, {
+    ...assignmentDto(updatedEnrollment),
+    taskCount: syncResult.taskCount,
+  });
 });
 
 /**

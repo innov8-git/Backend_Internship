@@ -55,6 +55,7 @@ function planDto(plan) {
     domainId: plan.domainId,
     durationMonths: plan.durationMonths,
     basePrice: plan.basePrice,
+    discountPercent: Number(plan.discountPercent) || 0,
     currency: plan.currency || 'INR',
     status: plan.status,
     designation: plan.designation
@@ -448,8 +449,11 @@ const listAdminPlans = asyncHandler(async (req, res) => {
 });
 
 const createPlan = asyncHandler(async (req, res) => {
-  const { designationId, domainId, durationMonths, basePrice } = req.body;
+  const { designationId, domainId, durationMonths, basePrice, discountPercent } = req.body;
   const status = req.body.status || PUBLISH_STATUS.DRAFT;
+  const discount = discountPercent !== undefined && discountPercent !== null && discountPercent !== ''
+    ? Number(discountPercent)
+    : 0;
   const details = [];
 
   const designation = designationId
@@ -476,6 +480,13 @@ const createPlan = asyncHandler(async (req, res) => {
     details.push({
       field: 'basePrice',
       message: 'Enter a valid base price (greater than ₹0 and up to ₹10,00,000).',
+    });
+  }
+
+  if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+    details.push({
+      field: 'discountPercent',
+      message: 'Discount must be between 0 and 100%.',
     });
   }
 
@@ -504,6 +515,7 @@ const createPlan = asyncHandler(async (req, res) => {
       domainId,
       durationMonths: Number(durationMonths),
       basePrice: Number(basePrice),
+      discountPercent: discount,
       currency: 'INR',
       status,
       createdBy: req.user.id,
@@ -519,6 +531,7 @@ const createPlan = asyncHandler(async (req, res) => {
     entityId: plan.id,
     after: {
       basePrice: plan.basePrice,
+      discountPercent: plan.discountPercent,
       durationMonths: plan.durationMonths,
       designationId: plan.designationId,
       domainId: plan.domainId,
@@ -538,7 +551,12 @@ const updatePlan = asyncHandler(async (req, res) => {
   });
   if (!current) throw ApiError.notFound('Plan not found.');
 
-  const { designationId, domainId, durationMonths, basePrice } = req.body;
+  const { domainId, durationMonths, basePrice, discountPercent } = req.body;
+  const designationId = req.body.designationId || current.designationId;
+  const discount =
+    discountPercent !== undefined && discountPercent !== null && discountPercent !== ''
+      ? Number(discountPercent)
+      : Number(current.discountPercent) || 0;
   const details = [];
 
   const designation = designationId
@@ -568,6 +586,13 @@ const updatePlan = asyncHandler(async (req, res) => {
     });
   }
 
+  if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+    details.push({
+      field: 'discountPercent',
+      message: 'Discount must be between 0 and 100%.',
+    });
+  }
+
   if (details.length > 0) throw ApiError.validationError(details);
 
   const duplicate = await prisma.internshipPlan.findFirst({
@@ -589,6 +614,7 @@ const updatePlan = asyncHandler(async (req, res) => {
       domainId,
       durationMonths: Number(durationMonths),
       basePrice: Number(basePrice),
+      discountPercent: discount,
       updatedBy: req.user.id,
     },
     include: { designation: true, domain: true },
@@ -601,12 +627,14 @@ const updatePlan = asyncHandler(async (req, res) => {
     entityId: updated.id,
     before: {
       basePrice: current.basePrice,
+      discountPercent: current.discountPercent,
       durationMonths: current.durationMonths,
       designationId: current.designationId,
       domainId: current.domainId,
     },
     after: {
       basePrice: updated.basePrice,
+      discountPercent: updated.discountPercent,
       durationMonths: updated.durationMonths,
       designationId: updated.designationId,
       domainId: updated.domainId,

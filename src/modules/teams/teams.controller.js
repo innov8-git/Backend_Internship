@@ -152,7 +152,7 @@ async function computeTeamReadiness(team) {
 
   const ready =
     memberStatusList.length >= MIN_TEAM_SIZE &&
-    memberStatusList.every((m) => m.joined && m.assessed && m.paid);
+    memberStatusList.every((m) => m.joined && m.paid);
 
   return {
     teamId: team.id,
@@ -593,4 +593,5 @@ module.exports = {
   getTeamReadiness,
   updateTeamRepo,
   getTeamProgress,
+  computeTeamReadiness,
 };
