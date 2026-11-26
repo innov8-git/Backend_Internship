@@ -63,11 +63,6 @@ router.get('/project-assignments', adminProjectsController.listProjectAssignment
 router.post('/project-assignments', adminProjectsController.assignProject);
 router.delete('/project-assignments/:enrollmentId', adminProjectsController.unassignProject);
 
-// ─── Catalog: Internship Plans ───────────────────────────────────────────────
-router.get('/internship-plans', adminCatalogController.listAdminPlans);
-router.post('/internship-plans', adminCatalogController.createPlan);
-router.put('/internship-plans/:id', adminCatalogController.updatePlan);
-router.patch('/internship-plans/:id/status', adminCatalogController.updatePlanStatus);
 
 // ─── Catalog: Assessments ────────────────────────────────────────────────────
 router.get('/assessments', adminCatalogController.listAdminAssessments);
@@ -81,13 +76,13 @@ router.patch('/users/:id/roles', adminController.updateUserRoles);
 router.patch('/users/:id/status', adminController.updateUserStatus);
 router.patch('/users/:id/trainer', adminController.updateStudentTrainer);
 
-// ─── Enrollments ─────────────────────────────────────────────────────────────
-router.get('/enrollments', adminController.listAdminEnrollments);
-router.get('/enrollments/:id', adminController.getAdminEnrollmentById);
 
 // ─── Submissions & Escalations Oversight ─────────────────────────────────────
 router.get('/submissions', adminController.listAdminSubmissions);
 router.post('/submissions/:id/review', adminController.reviewAdminSubmission);
+
+// ─── Revenue Analytics ───────────────────────────────────────────────────────
+router.get('/revenue', adminController.getAdminRevenue);
 
 // ─── Payments ────────────────────────────────────────────────────────────────
 router.get('/payments', adminController.listAdminPayments);
