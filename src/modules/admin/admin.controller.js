@@ -101,6 +101,18 @@ function userDto(user) {
     roles,
     status: user.status,
     emailVerified: user.emailVerified,
+    ...(user.referredByTpo
+      ? {
+          referredByTpo: {
+            _id: user.referredByTpo.id,
+            name: user.referredByTpo.name,
+            college: user.referredByTpo.college,
+            referralCode: user.referredByTpo.referralCode,
+          },
+        }
+      : user.referralCodeUsed
+        ? { referralCodeUsed: user.referralCodeUsed }
+        : {}),
     ...(assignedTrainer !== null && { assignedTrainer }),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -362,6 +374,9 @@ const listUsers = asyncHandler(async (req, res) => {
     prisma.user.findMany({
       where,
       include: {
+        referredByTpo: {
+          select: { id: true, name: true, college: true, referralCode: true },
+        },
         userRoles: {
           include: {
             role: true,

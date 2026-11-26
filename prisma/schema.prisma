@@ -157,9 +157,15 @@ model User {
   googleId     String? @unique
   authProvider String  @default("LOCAL")
 
+  // TPO Referral Tracking
+  referredByTpoId  String?
+  referralCodeUsed String?
+
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
+  referredByTpo      Tpo?                @relation("TpoReferredStudents", fields: [referredByTpoId], references: [id], onDelete: SetNull)
+  createdTpos        Tpo[]               @relation("TpoCreatedBy")
   authTokens         AuthToken[]
   assessmentAttempts AssessmentAttempt[]
   quotes             Quote[]
@@ -182,6 +188,7 @@ model User {
 
   @@index([status])
   @@index([createdAt])
+  @@index([referredByTpoId])
   @@map("users")
 }
 
@@ -919,4 +926,27 @@ model Notification {
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+// --- TPO (Training & Placement Officer) Referral Codes ----------------------
+
+model Tpo {
+  id           String   @id @default(uuid())
+  name         String
+  college      String
+  email        String
+  phone        String
+  referralCode String   @unique
+  isActive     Boolean  @default(true)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdBy        User?  @relation("TpoCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  referredStudents User[] @relation("TpoReferredStudents")
+
+  @@index([isActive])
+  @@index([email])
+  @@index([createdAt])
+  @@map("tpos")
 }

@@ -29,6 +29,10 @@ const baseUserFields = {
       'string.pattern.base': 'Your password needs at least one letter and one number.',
       'any.required': 'Create a password.',
     }),
+
+  referralCode: Joi.string().trim().max(32).allow('', null).optional().messages({
+    'string.max': 'Reference code is too long.',
+  }),
 };
 
 // 1. Dedicated Student Registration Schema

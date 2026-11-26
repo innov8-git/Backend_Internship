@@ -25,6 +25,12 @@ const {
 const router = Router();
 
 // Public registration routes with validation & rate limiting
+router.get(
+  '/referral-code/:code',
+  createAuthLimiter(),
+  authController.validateReferralCode,
+);
+
 router.post(
   '/register/student',
   createAuthLimiter(),

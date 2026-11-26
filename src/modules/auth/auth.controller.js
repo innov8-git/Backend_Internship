@@ -102,6 +102,14 @@ function validateAvatarFile(file) {
  */
 
 /**
+ * GET /api/v1/auth/referral-code/:code — validate a TPO reference code for live registration UX
+ */
+const validateReferralCode = asyncHandler(async (req, res) => {
+  const result = await authService.validateReferralCode(req.params.code);
+  return ok(res, result);
+});
+
+/**
  * POST /api/v1/auth/register (Unified Endpoint)
  */
 const register = asyncHandler(async (req, res) => {
@@ -386,6 +394,7 @@ const verifyResetOtp = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  validateReferralCode,
   register,
   registerStudent,
   login,

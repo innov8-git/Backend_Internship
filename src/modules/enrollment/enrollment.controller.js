@@ -22,6 +22,7 @@ const {
 const { sendPaymentSuccessEmail } = require('../../libs/email');
 const { computeTeamReadiness } = require('../teams/teams.controller');
 const { notifyAdmins } = require('../notifications/services/notifications.service');
+const { normalizeReferralCode } = require('../admin/services/tpo-code.util');
 const { InternshipsService } = require('../internships/services/internships.service');
 const logger = require('../../libs/logger');
 
@@ -876,12 +877,37 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     projectTitle,
     amount: rawAmount,
     track,
+    referralCode,
     internshipId,
     companyName,
   } = req.body;
 
   if (!email || !String(email).trim()) {
     throw ApiError.badRequest('EMAIL_REQUIRED', 'Email address is required for demo checkout.');
+  }
+
+  // Validate optional TPO referral code before creating enrollment or payment
+  let referredTpo = null;
+  const normalizedCode = normalizeReferralCode(referralCode);
+  if (normalizedCode) {
+    referredTpo = await prisma.tpo.findUnique({
+      where: { referralCode: normalizedCode },
+      select: {
+        id: true,
+        name: true,
+        college: true,
+        referralCode: true,
+        isActive: true,
+      },
+    });
+    if (!referredTpo || !referredTpo.isActive) {
+      throw ApiError.validationError([
+        {
+          field: 'referralCode',
+          message: 'Invalid or inactive TPO reference code. Please double-check with your TPO.',
+        },
+      ]);
+    }
   }
 
   const cleanEmail = String(email).trim().toLowerCase();
@@ -897,9 +923,9 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
   }
 
   if (!user) {
-    let studentRole = await prisma.role.findUnique({ where: { name: ROLES.STUDENT } });
+    let studentRole = await prisma.roleModel.findUnique({ where: { name: ROLES.STUDENT } });
     if (!studentRole) {
-      studentRole = await prisma.role.findFirst({ where: { name: 'STUDENT' } });
+      studentRole = await prisma.roleModel.findFirst({ where: { name: 'STUDENT' } });
     }
     const pwdHash = await hashPassword('DemoStudent123!');
     user = await prisma.user.create({
@@ -911,6 +937,8 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
         passwordHash: pwdHash,
         status: 'ACTIVE',
         emailVerified: true,
+        referredByTpoId: referredTpo?.id || null,
+        referralCodeUsed: referredTpo?.referralCode || null,
         ...(studentRole && {
           userRoles: {
             create: { roleId: studentRole.id },
@@ -923,6 +951,10 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     if (cleanName && (!user.name || user.name === user.email)) updateData.name = cleanName;
     if (phone && !user.phone) updateData.phone = String(phone).trim();
     if (college && !user.college) updateData.college = String(college).trim();
+    if (referredTpo) {
+      updateData.referredByTpoId = referredTpo.id;
+      updateData.referralCodeUsed = referredTpo.referralCode;
+    }
     if (Object.keys(updateData).length > 0) {
       user = await prisma.user.update({
         where: { id: user.id },
@@ -1056,6 +1088,7 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
         currency: 'INR',
         discount: 0,
         payableAmount: amount,
+        ...(referredTpo ? { referralCode: referredTpo.referralCode, tpoId: referredTpo.id } : {}),
       },
     },
   });
@@ -1094,6 +1127,8 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     domainName: domain?.name,
     projectTitle: project?.title,
     durationMonths: durMonths,
+    referralCodeUsed: referredTpo?.referralCode || user.referralCodeUsed || null,
+    tpoName: referredTpo?.name || null,
   });
 });
 
