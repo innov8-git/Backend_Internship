@@ -104,6 +104,30 @@ const COLOR_THEMES = Object.freeze({
   },
 });
 
+const PRICING_DURATIONS = Object.freeze([1, 2, 3, 6]);
+const DEFAULT_DURATION_PRICES = Object.freeze({
+  1: 999,
+  2: 1499,
+  3: 1999,
+  6: 2999,
+});
+const DEFAULT_CONCESSION_PERCENT = 0;
+
+function buildDefaultPricing(domains = []) {
+  const domainPrices = {};
+  (Array.isArray(domains) ? domains : []).forEach((dom) => {
+    const clean = String(dom || '').trim();
+    if (clean) {
+      domainPrices[clean] = { ...DEFAULT_DURATION_PRICES };
+    }
+  });
+  return {
+    concessionPercent: DEFAULT_CONCESSION_PERCENT,
+    defaultPrices: { ...DEFAULT_DURATION_PRICES },
+    domainPrices,
+  };
+}
+
 function createInternshipRole({
   id,
   track,
@@ -116,6 +140,7 @@ function createInternshipRole({
   techStack = [],
   skills = [],
   applicantsCount = 130,
+  pricing,
 }) {
   const isWeb = track === 'web';
   const commonResp = isWeb ? BASE_WEB_RESPONSIBILITIES : BASE_APP_RESPONSIBILITIES;
@@ -155,6 +180,7 @@ function createInternshipRole({
     eligibility: isWeb
       ? 'B.Tech / B.E / BCA / MCA with core programming and web fundamentals.'
       : 'B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals.',
+    pricing: pricing || buildDefaultPricing(domains),
   };
 }
 
@@ -408,5 +434,9 @@ module.exports = {
   BASE_APP_SKILLS,
   COLOR_THEMES,
   DEFAULT_PARTNER_COMPANIES,
+  PRICING_DURATIONS,
+  DEFAULT_DURATION_PRICES,
+  DEFAULT_CONCESSION_PERCENT,
+  buildDefaultPricing,
   createInternshipRole,
 };

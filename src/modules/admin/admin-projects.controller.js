@@ -18,7 +18,6 @@ const {
   syncProjectTasksToAssignedEnrollments,
 } = require('./services/project-task-sync.service');
 const {
-  createNotification,
   createNotificationsForUsers,
 } = require('../notifications/services/notifications.service');
 const { sendProjectAssignedEmail } = require('../../libs/email');
