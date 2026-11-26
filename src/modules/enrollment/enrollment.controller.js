@@ -22,6 +22,7 @@ const {
 const { sendPaymentSuccessEmail } = require('../../libs/email');
 const { computeTeamReadiness } = require('../teams/teams.controller');
 const { notifyAdmins } = require('../notifications/services/notifications.service');
+const { InternshipsService } = require('../internships/services/internships.service');
 const logger = require('../../libs/logger');
 
 const QUOTE_TTL_HOURS = 24;
@@ -875,6 +876,8 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     projectTitle,
     amount: rawAmount,
     track,
+    internshipId,
+    companyName,
   } = req.body;
 
   if (!email || !String(email).trim()) {
@@ -1020,8 +1023,22 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     });
   }
 
-  // 6. Resolve Amount (paise)
-  const amount = rawAmount ? Number(rawAmount) : 169900;
+  // 6. Resolve Amount (paise) from partner internship pricing if available, fallback to rawAmount / default
+  const resolvedQuote =
+    internshipId || companyName
+      ? InternshipsService.getQuote({
+          internshipId,
+          companyName,
+          domainName: domain?.name || domainName,
+          durationMonths: durMonths,
+        })
+      : null;
+  const amount =
+    resolvedQuote && Number.isFinite(resolvedQuote.payablePaise)
+      ? resolvedQuote.payablePaise
+      : rawAmount
+        ? Number(rawAmount)
+        : 169900;
 
   // 7. Create Enrollment
   const enrollment = await prisma.enrollment.create({
