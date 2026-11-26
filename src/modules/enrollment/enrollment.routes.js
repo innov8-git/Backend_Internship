@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const enrollmentController = require('./enrollment.controller');
-const { authenticate, authorize } = require('../../common/guards');
+const { authenticate, optionalAuth, authorize } = require('../../common/guards');
 const { ROLES } = require('../../common/constants');
 
 const router = Router();
@@ -18,6 +18,7 @@ router.get('/enrollments/:id', authenticate, enrollmentController.getEnrollmentB
 // Payments
 router.post('/payments/orders', authenticate, authorize(ROLES.STUDENT), enrollmentController.createPaymentOrder);
 router.post('/payments/mock/complete', authenticate, enrollmentController.completeMockPayment);
+router.post('/payments/demo-checkout', optionalAuth, enrollmentController.completeDemoCheckout);
 router.post('/payments/webhooks/:provider', enrollmentController.handlePaymentWebhook);
 
 module.exports = router;

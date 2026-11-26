@@ -6,6 +6,7 @@ const {
   created,
   parsePagination,
   paginatedResponse,
+  hashPassword,
 } = require('../../utils');
 const {
   ROLES,
@@ -128,6 +129,9 @@ function termsAcceptanceDto(acceptance) {
 
 function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, certificate) {
   if (!enrollment) return null;
+
+  const mentor = buildMentorDto(enrollment);
+
   return {
     _id: enrollment.id,
     userId: enrollment.userId,
@@ -136,6 +140,8 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
     planId: enrollment.planId,
     plan: planRef(plan),
     quoteId: enrollment.quoteId || null,
+    mentor,
+    assignedTrainer: mentor,
     enrollmentType:
       enrollment.enrollmentType ||
       (enrollment.teamId ? ENROLLMENT_TYPE.TEAM : ENROLLMENT_TYPE.INDIVIDUAL),
@@ -151,7 +157,6 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
     projectId: enrollment.projectId || null,
     project: enrollment.project ? projectSummaryDto(enrollment.project) : null,
     projectAssignedAt: enrollment.projectAssignedAt || null,
-    mentor: buildMentorDto(enrollment),
     createdAt: enrollment.createdAt,
     activatedAt: enrollment.activatedAt || null,
     completedAt: enrollment.completedAt || null,
@@ -457,6 +462,9 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
           },
         },
       },
+      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      certificate: true,
+      taskProgress: true,
       trainerAssignments: {
         where: { active: true },
         include: {
@@ -465,9 +473,6 @@ const listMyEnrollments = asyncHandler(async (req, res) => {
           },
         },
       },
-      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
-      certificate: true,
-      taskProgress: true,
     },
     orderBy: { createdAt: 'desc' },
     skip,
@@ -522,6 +527,9 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
           },
         },
       },
+      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      certificate: true,
+      taskProgress: true,
       trainerAssignments: {
         where: { active: true },
         include: {
@@ -530,9 +538,6 @@ const getEnrollmentById = asyncHandler(async (req, res) => {
           },
         },
       },
-      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
-      certificate: true,
-      taskProgress: true,
     },
   });
 
@@ -857,6 +862,224 @@ const completeMockPayment = asyncHandler(async (req, res) => {
   ok(res, { status: PAYMENT_STATUS.SUCCESS });
 });
 
+const completeDemoCheckout = asyncHandler(async (req, res) => {
+  const {
+    fullName,
+    email,
+    phone,
+    college,
+    domainName,
+    duration,
+    durationMonths: rawDurationMonths,
+    projectId,
+    projectTitle,
+    amount: rawAmount,
+    track,
+  } = req.body;
+
+  if (!email || !String(email).trim()) {
+    throw ApiError.badRequest('EMAIL_REQUIRED', 'Email address is required for demo checkout.');
+  }
+
+  const cleanEmail = String(email).trim().toLowerCase();
+  const cleanName = String(fullName || cleanEmail.split('@')[0] || 'Student').trim();
+
+  // 1. Resolve or create user
+  let user = null;
+  if (req.user?.id) {
+    user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  }
+  if (!user) {
+    user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+  }
+
+  if (!user) {
+    let studentRole = await prisma.role.findUnique({ where: { name: ROLES.STUDENT } });
+    if (!studentRole) {
+      studentRole = await prisma.role.findFirst({ where: { name: 'STUDENT' } });
+    }
+    const pwdHash = await hashPassword('DemoStudent123!');
+    user = await prisma.user.create({
+      data: {
+        name: cleanName,
+        email: cleanEmail,
+        phone: phone ? String(phone).trim() : null,
+        college: college ? String(college).trim() : null,
+        passwordHash: pwdHash,
+        status: 'ACTIVE',
+        emailVerified: true,
+        ...(studentRole && {
+          userRoles: {
+            create: { roleId: studentRole.id },
+          },
+        }),
+      },
+    });
+  } else {
+    const updateData = {};
+    if (cleanName && (!user.name || user.name === user.email)) updateData.name = cleanName;
+    if (phone && !user.phone) updateData.phone = String(phone).trim();
+    if (college && !user.college) updateData.college = String(college).trim();
+    if (Object.keys(updateData).length > 0) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: updateData,
+      });
+    }
+  }
+
+  // 2. Resolve Domain
+  let domain = null;
+  if (domainName) {
+    domain = await prisma.domain.findFirst({
+      where: {
+        OR: [
+          { name: { equals: String(domainName).trim(), mode: 'insensitive' } },
+          { slug: { equals: String(domainName).trim().toLowerCase(), mode: 'insensitive' } },
+        ],
+      },
+    });
+  }
+  if (!domain) {
+    domain = await prisma.domain.findFirst();
+  }
+
+  // 3. Resolve Duration Months
+  let durMonths = Number(rawDurationMonths);
+  if (!durMonths || Number.isNaN(durMonths)) {
+    const matched = String(duration || '').match(/\d+/);
+    durMonths = matched ? parseInt(matched[0], 10) : 3;
+  }
+
+  // 4. Resolve Plan
+  let plan = null;
+  if (domain) {
+    plan = await prisma.internshipPlan.findFirst({
+      where: {
+        domainId: domain.id,
+        durationMonths: durMonths,
+      },
+    });
+    if (!plan) {
+      plan = await prisma.internshipPlan.findFirst({
+        where: { domainId: domain.id },
+      });
+    }
+  }
+  if (!plan) {
+    plan = await prisma.internshipPlan.findFirst();
+  }
+
+  if (!plan && domain) {
+    let designation = await prisma.designation.findFirst();
+    if (!designation) {
+      designation = await prisma.designation.create({
+        data: {
+          name: 'Software Engineer',
+          slug: 'software-engineer',
+          description: 'Software Engineer Role',
+          status: 'PUBLISHED',
+        },
+      });
+    }
+    plan = await prisma.internshipPlan.create({
+      data: {
+        designationId: designation.id,
+        domainId: domain.id,
+        durationMonths: durMonths,
+        basePrice: 169900,
+        currency: 'INR',
+        status: 'PUBLISHED',
+      },
+    });
+  }
+
+  // 5. Resolve Project
+  let project = null;
+  if (projectId) {
+    project = await prisma.project.findFirst({
+      where: {
+        OR: [
+          { id: String(projectId).trim() },
+          { slug: String(projectId).trim().toLowerCase() },
+        ],
+      },
+    });
+  }
+  if (!project && projectTitle) {
+    project = await prisma.project.findFirst({
+      where: {
+        title: { equals: String(projectTitle).trim(), mode: 'insensitive' },
+      },
+    });
+  }
+  if (!project && domain) {
+    project = await prisma.project.findFirst({
+      where: { domainId: domain.id },
+      orderBy: { isDefault: 'desc' },
+    });
+  }
+
+  // 6. Resolve Amount (paise)
+  const amount = rawAmount ? Number(rawAmount) : 169900;
+
+  // 7. Create Enrollment
+  const enrollment = await prisma.enrollment.create({
+    data: {
+      userId: user.id,
+      planId: plan.id,
+      projectId: project ? project.id : null,
+      track: String(track || 'web').toLowerCase() === 'app' ? 'app' : 'web',
+      status: ENROLLMENT_STATUS.ACTIVE,
+      paymentStatus: PAYMENT_STATUS.SUCCESS,
+      activatedAt: new Date(),
+      projectAssignedAt: project ? new Date() : null,
+      priceSnapshot: {
+        amount,
+        currency: 'INR',
+        discount: 0,
+        payableAmount: amount,
+      },
+    },
+  });
+
+  // 8. Create Payment
+  const orderId = `DEMO-TXN-${Math.floor(10000000 + Math.random() * 90000000)}`;
+  const payment = await prisma.payment.create({
+    data: {
+      enrollmentId: enrollment.id,
+      userId: user.id,
+      orderId,
+      provider: 'demo',
+      amount,
+      currency: 'INR',
+      status: PAYMENT_STATUS.SUCCESS,
+      gatewayReference: `pay_demo_${Math.random().toString(36).substring(2, 10)}`,
+      events: {
+        create: {
+          eventId: `evt_demo_${Date.now()}`,
+          type: 'payment.captured',
+          note: 'Demo payment completed directly in student modal.',
+        },
+      },
+    },
+  });
+
+  created(res, {
+    success: true,
+    enrollmentId: enrollment.id,
+    orderId: payment.orderId,
+    amount: payment.amount,
+    currency: payment.currency,
+    status: payment.status,
+    studentName: user.name,
+    studentEmail: user.email,
+    domainName: domain?.name,
+    projectTitle: project?.title,
+    durationMonths: durMonths,
+  });
+});
+
 const handlePaymentWebhook = asyncHandler(async (_req, res) => {
   ok(res, { received: true });
 });
@@ -870,6 +1093,7 @@ module.exports = {
   getEnrollmentById,
   createPaymentOrder,
   completeMockPayment,
+  completeDemoCheckout,
   handlePaymentWebhook,
   activateEnrollmentEngine,
 };

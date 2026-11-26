@@ -3,6 +3,8 @@ const adminController = require('./admin.controller');
 const adminCatalogController = require('./admin-catalog.controller');
 const adminProjectsController = require('./admin-projects.controller');
 const adminQuestionsController = require('./admin-questions.controller');
+const internshipsController = require('../internships/internships.controller');
+const { validateInternshipPayload } = require('../internships/internships.validator');
 const trainerApplicationsController = require('../trainer-applications/trainer-applications.controller');
 const { authenticate, authorize } = require('../../common/guards');
 const { ROLES } = require('../../common/constants');
@@ -28,12 +30,14 @@ router.get('/designations', adminCatalogController.listAdminDesignations);
 router.post('/designations', adminCatalogController.createDesignation);
 router.put('/designations/:id', adminCatalogController.updateDesignation);
 router.patch('/designations/:id/status', adminCatalogController.updateDesignationStatus);
+router.delete('/designations/:id', adminCatalogController.deleteDesignation);
 
 // ─── Catalog: Domains ────────────────────────────────────────────────────────
 router.get('/domains', adminCatalogController.listAdminDomains);
 router.post('/domains', adminCatalogController.createDomain);
 router.put('/domains/:id', adminCatalogController.updateDomain);
 router.patch('/domains/:id/status', adminCatalogController.updateDomainStatus);
+router.delete('/domains/:id', adminCatalogController.deleteDomain);
 router.get('/domains/:domainId/questions', adminQuestionsController.listDomainQuestions);
 router.post('/domains/:domainId/questions', adminQuestionsController.createDomainQuestion);
 router.put('/domains/:domainId/questions/:questionId', adminQuestionsController.updateDomainQuestion);
@@ -47,16 +51,18 @@ router.put('/projects/:id', adminProjectsController.updateProject);
 router.patch('/projects/:id/status', adminProjectsController.updateProjectStatus);
 router.delete('/projects/:id', adminProjectsController.deleteProject);
 
+// ─── Catalog: Partner Internships ───────────────────────────────────────────
+router.get('/internships', internshipsController.listInternships);
+router.post('/internships', validateInternshipPayload, internshipsController.createInternship);
+router.put('/internships/:id', validateInternshipPayload, internshipsController.updateInternship);
+router.delete('/internships/:id', internshipsController.deleteInternship);
+router.post('/internships/reset', internshipsController.resetInternships);
+
 // ─── Project Assignments ─────────────────────────────────────────────────────
 router.get('/project-assignments', adminProjectsController.listProjectAssignments);
 router.post('/project-assignments', adminProjectsController.assignProject);
 router.delete('/project-assignments/:enrollmentId', adminProjectsController.unassignProject);
 
-// ─── Catalog: Internship Plans ───────────────────────────────────────────────
-router.get('/internship-plans', adminCatalogController.listAdminPlans);
-router.post('/internship-plans', adminCatalogController.createPlan);
-router.put('/internship-plans/:id', adminCatalogController.updatePlan);
-router.patch('/internship-plans/:id/status', adminCatalogController.updatePlanStatus);
 
 // ─── Catalog: Assessments ────────────────────────────────────────────────────
 router.get('/assessments', adminCatalogController.listAdminAssessments);
@@ -70,13 +76,13 @@ router.patch('/users/:id/roles', adminController.updateUserRoles);
 router.patch('/users/:id/status', adminController.updateUserStatus);
 router.patch('/users/:id/trainer', adminController.updateStudentTrainer);
 
-// ─── Enrollments ─────────────────────────────────────────────────────────────
-router.get('/enrollments', adminController.listAdminEnrollments);
-router.get('/enrollments/:id', adminController.getAdminEnrollmentById);
 
 // ─── Submissions & Escalations Oversight ─────────────────────────────────────
 router.get('/submissions', adminController.listAdminSubmissions);
 router.post('/submissions/:id/review', adminController.reviewAdminSubmission);
+
+// ─── Revenue Analytics ───────────────────────────────────────────────────────
+router.get('/revenue', adminController.getAdminRevenue);
 
 // ─── Payments ────────────────────────────────────────────────────────────────
 router.get('/payments', adminController.listAdminPayments);

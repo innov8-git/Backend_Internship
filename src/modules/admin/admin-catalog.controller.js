@@ -60,24 +60,24 @@ function planDto(plan) {
     status: plan.status,
     designation: plan.designation
       ? {
-          _id: plan.designation.id,
-          name: plan.designation.name,
-          slug: plan.designation.slug,
-        }
+        _id: plan.designation.id,
+        name: plan.designation.name,
+        slug: plan.designation.slug,
+      }
       : null,
     domain: plan.domain
       ? {
-          _id: plan.domain.id,
-          name: plan.domain.name,
-          slug: plan.domain.slug,
-        }
+        _id: plan.domain.id,
+        name: plan.domain.name,
+        slug: plan.domain.slug,
+      }
       : null,
     createdAt: plan.createdAt,
     updatedAt: plan.updatedAt,
   };
 }
 
-function validateCatalogInput(body) {
+function validateCatalogInput(body, { requireDescription = true } = {}) {
   const name = cleanText(body?.name);
   const description = cleanMultiline(body?.description);
   const details = [];
@@ -88,10 +88,15 @@ function validateCatalogInput(body) {
       message: `Enter a name between ${NAME_MIN} and ${NAME_MAX} characters.`,
     });
   }
-  if (description.length < DESCRIPTION_MIN || description.length > DESCRIPTION_MAX) {
+  if (requireDescription && (description.length < DESCRIPTION_MIN || description.length > DESCRIPTION_MAX)) {
     details.push({
       field: 'description',
       message: `Enter a description between ${DESCRIPTION_MIN} and ${DESCRIPTION_MAX} characters.`,
+    });
+  } else if (!requireDescription && description.length > DESCRIPTION_MAX) {
+    details.push({
+      field: 'description',
+      message: `Keep the description to ${DESCRIPTION_MAX} characters or fewer.`,
     });
   }
   return { name, description, details };
@@ -149,7 +154,7 @@ const listAdminDesignations = asyncHandler(async (req, res) => {
 });
 
 const createDesignation = asyncHandler(async (req, res) => {
-  const { name, description, details } = validateCatalogInput(req.body);
+  const { name, description, details } = validateCatalogInput(req.body, { requireDescription: false });
   if (details.length > 0) throw ApiError.validationError(details);
 
   const existing = await prisma.designation.findFirst({
@@ -190,7 +195,7 @@ const updateDesignation = asyncHandler(async (req, res) => {
   const current = await prisma.designation.findUnique({ where: { id } });
   if (!current) throw ApiError.notFound('Designation not found.');
 
-  const { name, description, details } = validateCatalogInput(req.body);
+  const { name, description, details } = validateCatalogInput(req.body, { requireDescription: false });
   if (details.length > 0) throw ApiError.validationError(details);
 
   const existing = await prisma.designation.findFirst({
@@ -261,6 +266,39 @@ const updateDesignationStatus = asyncHandler(async (req, res) => {
   });
 
   ok(res, catalogItemDto(updated));
+});
+
+const deleteDesignation = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const current = await prisma.designation.findUnique({ where: { id } });
+  if (!current) throw ApiError.notFound('Designation not found.');
+
+  const [planCount, assessmentCount, scheduleCount, projectCount] = await Promise.all([
+    prisma.internshipPlan.count({ where: { designationId: id } }),
+    prisma.assessmentConfig.count({ where: { designationId: id } }),
+    prisma.scheduleTemplate.count({ where: { designationId: id } }),
+    prisma.project.count({ where: { designationId: id } }),
+  ]);
+
+  if (planCount > 0 || assessmentCount > 0 || scheduleCount > 0 || projectCount > 0) {
+    throw ApiError.conflict(
+      'IN_USE',
+      'Cannot delete this designation because it is linked to existing plans, projects, assessments, or schedules. Unpublish it instead.',
+    );
+  }
+
+  await prisma.designation.delete({ where: { id } });
+
+  await addAudit({
+    actorId: req.user.id,
+    action: 'DESIGNATION_DELETED',
+    entityType: 'Designation',
+    entityId: id,
+    before: catalogItemDto(current),
+    ip: req.ip,
+  });
+
+  ok(res, { success: true, message: 'Designation deleted successfully.' });
 });
 
 // ─── Domains ─────────────────────────────────────────────────────────────────
@@ -409,6 +447,38 @@ const updateDomainStatus = asyncHandler(async (req, res) => {
   });
 
   ok(res, catalogItemDto(updated));
+});
+
+const deleteDomain = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const current = await prisma.domain.findUnique({ where: { id } });
+  if (!current) throw ApiError.notFound('Domain not found.');
+
+  const [planCount, scheduleCount, projectCount] = await Promise.all([
+    prisma.internshipPlan.count({ where: { domainId: id } }),
+    prisma.scheduleTemplate.count({ where: { domainId: id } }),
+    prisma.project.count({ where: { domainId: id } }),
+  ]);
+
+  if (planCount > 0 || scheduleCount > 0 || projectCount > 0) {
+    throw ApiError.conflict(
+      'IN_USE',
+      'Cannot delete this domain because it is linked to existing plans, projects, or schedules. Unpublish it instead.',
+    );
+  }
+
+  await prisma.domain.delete({ where: { id } });
+
+  await addAudit({
+    actorId: req.user.id,
+    action: 'DOMAIN_DELETED',
+    entityType: 'Domain',
+    entityId: id,
+    before: catalogItemDto(current),
+    ip: req.ip,
+  });
+
+  ok(res, { success: true, message: 'Domain deleted successfully.' });
 });
 
 // ─── Internship Plans ────────────────────────────────────────────────────────
@@ -1049,10 +1119,12 @@ module.exports = {
   createDesignation,
   updateDesignation,
   updateDesignationStatus,
+  deleteDesignation,
   listAdminDomains,
   createDomain,
   updateDomain,
   updateDomainStatus,
+  deleteDomain,
   listAdminPlans,
   createPlan,
   updatePlan,

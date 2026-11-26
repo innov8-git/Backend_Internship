@@ -1,8 +1,15 @@
 'use strict';
 
+const path = require('path');
+const multer = require('multer');
 const authService = require('./services/auth.service');
 const otpService = require('./services/otp.service');
 const logger = require('../../libs/logger');
+const { getStorage } = require('../../libs/storage');
+const {
+  RESUME_RULES,
+  validateResumeFile,
+} = require('../trainer-applications/trainer-applications.controller');
 const {
   asyncHandler,
   setRefreshTokenCookie,
@@ -12,6 +19,82 @@ const {
   created,
   ApiError,
 } = require('../../utils');
+
+const AVATAR_RULES = Object.freeze({
+  maxFileSizeBytes: 5 * 1024 * 1024, // 5 MB
+  allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp', '.gif'],
+  allowedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+  extToMime: {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+  },
+});
+
+const avatarMulter = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: AVATAR_RULES.maxFileSizeBytes, files: 1 },
+});
+
+function avatarUploadMiddleware(req, res, next) {
+  avatarMulter.single('avatar')(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      const msg =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? 'Profile picture must be 5 MB or smaller.'
+          : err.message || 'Invalid image upload.';
+      return next(ApiError.validationError([{ field: 'avatar', message: msg }]));
+    }
+    return next(err);
+  });
+}
+
+function hasValidImageSignature(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
+  // PNG: 89 50 4E 47
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return true;
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return true;
+  // GIF: GIF8
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) return true;
+  // WEBP: RIFF....WEBP
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function validateAvatarFile(file) {
+  if (!file) {
+    return { field: 'avatar', message: 'Please select an image file (PNG, JPG, WEBP, or GIF).' };
+  }
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  if (ext && !AVATAR_RULES.allowedExtensions.includes(ext)) {
+    return { field: 'avatar', message: 'Upload a PNG, JPG, WEBP, or GIF image.' };
+  }
+  if (file.mimetype && !AVATAR_RULES.allowedMimeTypes.includes(file.mimetype.toLowerCase())) {
+    return { field: 'avatar', message: 'Unsupported image type. Upload PNG, JPG, WEBP, or GIF.' };
+  }
+  if (file.size > AVATAR_RULES.maxFileSizeBytes) {
+    return { field: 'avatar', message: 'Profile picture must be 5 MB or smaller.' };
+  }
+  if (!hasValidImageSignature(file.buffer)) {
+    return { field: 'avatar', message: 'The uploaded file is not a valid PNG, JPG, WEBP, or GIF image.' };
+  }
+  return null;
+}
 
 /**
  * Authentication Controller
@@ -109,6 +192,80 @@ const getMe = asyncHandler(async (req, res) => {
 const updateMe = asyncHandler(async (req, res) => {
   const user = await authService.updateMe(req.user.id, req.body);
   return ok(res, user, 'Profile updated.');
+});
+
+/**
+ * POST /api/v1/auth/me/avatar — upload profile picture to configured storage (Cloudinary)
+ */
+const uploadAvatar = asyncHandler(async (req, res) => {
+  const fileError = validateAvatarFile(req.file);
+  if (fileError) {
+    throw ApiError.validationError([fileError]);
+  }
+
+  const ext = path.extname(req.file.originalname || '').toLowerCase();
+  const effectiveMime = req.file.mimetype || AVATAR_RULES.extToMime[ext] || 'image/png';
+  const storage = getStorage();
+  const uploaded = await storage.upload(req.file.buffer, req.file.originalname, effectiveMime, {
+    folder: 'avatars',
+  });
+
+  try {
+    const user = await authService.setAvatarUrl(req.user.id, uploaded.url);
+    return ok(res, user, 'Profile picture updated successfully.');
+  } catch (err) {
+    try {
+      await storage.delete(uploaded.storageKey, uploaded.resourceType || 'image');
+    } catch (cleanupErr) {
+      logger.warn(`Failed to clean up orphaned avatar ${uploaded.storageKey}: ${cleanupErr.message}`);
+    }
+    throw err;
+  }
+});
+
+/**
+ * POST /api/v1/auth/me/resume — upload trainer resume to configured storage (Cloudinary)
+ */
+const uploadResume = asyncHandler(async (req, res) => {
+  const fileError = validateResumeFile(req.file);
+  if (fileError) {
+    throw ApiError.validationError([fileError]);
+  }
+
+  const ext = path.extname(req.file.originalname || '').toLowerCase();
+  const effectiveMime = RESUME_RULES.extToMime[ext] || req.file.mimetype || 'application/pdf';
+  const storage = getStorage();
+  const uploaded = await storage.upload(req.file.buffer, req.file.originalname, effectiveMime, {
+    folder: 'resumes',
+  });
+
+  let result;
+  try {
+    result = await authService.setTrainerResume(req.user.id, {
+      resumeUrl: uploaded.url,
+      resumeKey: uploaded.storageKey,
+      resumeName: uploaded.name,
+      resumeMimeType: effectiveMime,
+      resumeSize: uploaded.sizeBytes,
+    });
+  } catch (err) {
+    try {
+      await storage.delete(uploaded.storageKey, uploaded.resourceType || 'raw');
+    } catch (cleanupErr) {
+      logger.warn(`Failed to clean up orphaned resume ${uploaded.storageKey}: ${cleanupErr.message}`);
+    }
+    throw err;
+  }
+
+  if (result.previousResumeKey && result.previousResumeKey !== uploaded.storageKey) {
+    try {
+      await storage.delete(result.previousResumeKey, 'raw');
+    } catch (err) {
+      logger.warn(`Failed to delete previous trainer resume ${result.previousResumeKey}: ${err.message}`);
+    }
+  }
+
+  return ok(res, result.user, 'Resume uploaded successfully.');
 });
 
 /**
@@ -236,6 +393,9 @@ module.exports = {
   refresh,
   getMe,
   updateMe,
+  avatarUploadMiddleware,
+  uploadAvatar,
+  uploadResume,
   loginWithGoogle,
   forgotPassword,
   resetPassword,

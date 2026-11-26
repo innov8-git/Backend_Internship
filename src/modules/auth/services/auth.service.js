@@ -384,6 +384,11 @@ class AuthService {
           if (key === 'resumeSize') tp[key] = v === null ? null : Number(v);
           else tp[key] = v === '' || v === null ? null : String(v);
         }
+        if (trainerProfile.resumeName === '' || trainerProfile.resumeName === null) {
+          tp.resumeUrl = null;
+          tp.resumeKey = null;
+          tp.resumeMimeType = null;
+        }
         if (Object.keys(tp).length > 0) {
           await tx.trainerProfile.upsert({
             where: { userId },
@@ -402,6 +407,63 @@ class AuthService {
     invalidateAuthUserCache(userId);
     logger.info(`[Auth] Profile updated for user ${userId}`);
     return this.getMe(userId);
+  }
+
+  /**
+   * Persist an uploaded avatar URL for the current user (POST /auth/me/avatar).
+   */
+  async setAvatarUrl(userId, avatarUrl) {
+    const existing = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!existing) throw ApiError.unauthorized('UNAUTHENTICATED', 'User not found.');
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: avatarUrl || null },
+    });
+
+    invalidateAuthUserCache(userId);
+    logger.info(`[Auth] Avatar uploaded for user ${userId}`);
+    return this.getMe(userId);
+  }
+
+  /**
+   * Persist an uploaded resume on the trainer's profile (POST /auth/me/resume).
+   */
+  async setTrainerResume(userId, { resumeUrl, resumeKey, resumeName, resumeMimeType, resumeSize }) {
+    const existing = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { userRoles: { include: { role: true } }, trainerProfile: true },
+    });
+    if (!existing) throw ApiError.unauthorized('UNAUTHENTICATED', 'User not found.');
+
+    const isTrainer = existing.userRoles.some((ur) => ur.role?.name === 'TRAINER');
+    if (!isTrainer) {
+      throw ApiError.forbidden('FORBIDDEN', 'Only trainer accounts can upload a trainer resume.');
+    }
+
+    const previousResumeKey = existing.trainerProfile?.resumeKey || null;
+
+    await prisma.trainerProfile.upsert({
+      where: { userId },
+      update: { resumeUrl, resumeKey, resumeName, resumeMimeType, resumeSize },
+      create: {
+        userId,
+        domain: '',
+        experience: '',
+        resumeUrl,
+        resumeKey,
+        resumeName,
+        resumeMimeType,
+        resumeSize,
+      },
+    });
+
+    invalidateAuthUserCache(userId);
+    logger.info(`[Auth] Trainer resume uploaded for user ${userId}`);
+    return {
+      user: await this.getMe(userId),
+      previousResumeKey,
+    };
   }
 
   /**
