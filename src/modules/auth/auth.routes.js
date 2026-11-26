@@ -2,7 +2,9 @@
 
 const { Router } = require('express');
 const authController = require('./auth.controller');
-const { authenticate } = require('../../common/guards');
+const { authenticate, authorize } = require('../../common/guards');
+const { ROLES } = require('../../common/constants');
+const { resumeUploadMiddleware } = require('../trainer-applications/trainer-applications.controller');
 const { createAuthLimiter, createLoginLimiter } = require('../../config/rate-limit.config');
 const { validate } = require('../../common/pipes');
 const {
@@ -148,6 +150,21 @@ router.patch(
   authenticate,
   validate(updateMeSchema),
   authController.updateMe,
+);
+
+router.post(
+  '/me/avatar',
+  authenticate,
+  authController.avatarUploadMiddleware,
+  authController.uploadAvatar,
+);
+
+router.post(
+  '/me/resume',
+  authenticate,
+  authorize(ROLES.TRAINER),
+  resumeUploadMiddleware,
+  authController.uploadResume,
 );
 
 module.exports = router;

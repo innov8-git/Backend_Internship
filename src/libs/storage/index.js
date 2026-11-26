@@ -94,18 +94,21 @@ class CloudinaryStorage {
    * @param {Buffer} buffer
    * @param {string} originalName
    * @param {string} mimeType
+   * @param {{ folder?: string }} [options]
    * @returns {Promise<{storageKey: string, url: string, name: string, mimeType: string, sizeBytes: number}>}
    */
-  async upload(buffer, originalName, mimeType) {
+  async upload(buffer, originalName, mimeType, options = {}) {
     const isImage = Boolean(mimeType && mimeType.startsWith('image/'));
     const resourceType = isImage ? 'image' : 'raw';
     const ext = isImage ? '' : path.extname(originalName || '').toLowerCase();
     const publicId = `${uuidv4()}${ext}`;
+    const subfolder = options?.folder ? String(options.folder).replace(/^\/+|\/+$/g, '') : '';
+    const targetFolder = subfolder ? `${this.folder}/${subfolder}` : this.folder;
 
     const result = await new Promise((resolve, reject) => {
       const uploadStream = this.cloudinary.uploader.upload_stream(
         {
-          folder: this.folder,
+          folder: targetFolder,
           public_id: publicId,
           resource_type: resourceType,
           overwrite: false,

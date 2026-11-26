@@ -140,11 +140,11 @@ function applicationDto(app, existingUserMap = null) {
     createdUserId: app.createdUserId,
     existingUser: existingUser
       ? {
-          _id: existingUser.id,
-          name: existingUser.name,
-          status: existingUser.status,
-          roles: (existingUser.userRoles || []).map((ur) => ur.role?.name).filter(Boolean),
-        }
+        _id: existingUser.id,
+        name: existingUser.name,
+        status: existingUser.status,
+        roles: (existingUser.userRoles || []).map((ur) => ur.role?.name).filter(Boolean),
+      }
       : null,
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
@@ -280,7 +280,9 @@ const submitTrainerApplication = asyncHandler(async (req, res) => {
   const effectiveMime = RESUME_RULES.extToMime[ext] || req.file.mimetype || 'application/pdf';
 
   const storage = getStorage();
-  const uploaded = await storage.upload(req.file.buffer, req.file.originalname, effectiveMime);
+  const uploaded = await storage.upload(req.file.buffer, req.file.originalname, effectiveMime, {
+    folder: 'resumes',
+  });
 
   let application;
   try {
@@ -380,15 +382,15 @@ const listTrainerApplications = asyncHandler(async (req, res) => {
   const existingUsers =
     emails.length > 0
       ? await prisma.user.findMany({
-          where: { email: { in: emails } },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            status: true,
-            userRoles: { select: { role: { select: { name: true } } } },
-          },
-        })
+        where: { email: { in: emails } },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          status: true,
+          userRoles: { select: { role: { select: { name: true } } } },
+        },
+      })
       : [];
 
   const existingUserMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
@@ -707,6 +709,7 @@ const deleteTrainerApplication = asyncHandler(async (req, res) => {
 
 module.exports = {
   RESUME_RULES,
+  validateResumeFile,
   resumeUploadMiddleware,
   streamResumeFile,
   submitTrainerApplication,
