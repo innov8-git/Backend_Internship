@@ -94,6 +94,7 @@ router.get('/teams', adminController.listAdminTeams);
 
 // ─── Trainer Assignments ─────────────────────────────────────────────────────
 router.get('/trainer-assignments', adminController.listTrainerAssignments);
+router.get('/trainer-assignments/summary', adminController.getTrainerAssignmentsSummary);
 router.post('/trainer-assignments', adminController.createTrainerAssignment);
 router.delete('/trainer-assignments/:id', adminController.deleteTrainerAssignment);
 
@@ -104,6 +105,7 @@ router.get('/trainers/:id/resume', adminController.getTrainerResume);
 router.patch('/trainers/:id', validate(updateTrainerPrivilegeSchema), adminController.updateTrainerStatus);
 router.delete('/trainers/:id', adminController.deleteTrainer);
 router.get('/trainers/:id/assignments', adminController.listTrainerAssignmentsForTrainer);
+router.get('/trainers/:id/reports', adminController.getAdminTrainerReports);
 router.post('/trainers/:id/assignments', adminController.assignToTrainer);
 router.delete('/trainers/:trainerId/assignments/:assignmentId', adminController.removeTrainerAssignmentForTrainer);
 

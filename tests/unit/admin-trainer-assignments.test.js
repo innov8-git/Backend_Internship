@@ -3,9 +3,11 @@
 process.env.NODE_ENV = 'test';
 
 const mockPrisma = {
-  user: { findUnique: jest.fn() },
+  user: { findUnique: jest.fn(), count: jest.fn() },
   enrollment: { findUnique: jest.fn(), findMany: jest.fn() },
   team: { findUnique: jest.fn() },
+  taskProgress: { count: jest.fn() },
+  taskSubmission: { count: jest.fn() },
   trainerAssignment: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
@@ -300,6 +302,115 @@ describe('Admin trainer assignment endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ success: true, assignment: null });
       expect(addAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'TRAINER_UNASSIGNED' }));
+    });
+  });
+
+  describe('GET /api/v1/admin/trainers/:id/reports', () => {
+    test('returns 404 when trainer does not exist', async () => {
+      mockPrisma.user.findUnique
+        .mockResolvedValueOnce(makeAuthUser(ADMIN_ID, 'ADMIN'))
+        .mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .get(`/api/v1/admin/trainers/missing-id/reports`)
+        .set('Authorization', bearerFor(ADMIN_ID, 'ADMIN'));
+
+      expect(res.status).toBe(404);
+    });
+
+    test('returns trainer info and assignment progress rows for admin', async () => {
+      mockPrisma.user.findUnique
+        .mockResolvedValueOnce(makeAuthUser(ADMIN_ID, 'ADMIN'))
+        .mockResolvedValueOnce({
+          id: TRAINER_ID,
+          name: 'Gayatri Patil',
+          email: 'gayupatil2108@gmail.com',
+        });
+
+      mockPrisma.trainerAssignment.findMany.mockResolvedValueOnce([
+        {
+          id: 'assign-1',
+          trainerId: TRAINER_ID,
+          enrollmentId: 'enr-1',
+          teamId: null,
+          assignedAt: new Date('2026-11-25T10:00:00Z'),
+          enrollment: {
+            id: 'enr-1',
+            track: 'web',
+            activatedAt: new Date('2026-11-25T10:00:00Z'),
+            user: { id: 'stu-1', name: 'Kedar Deshmukh', email: 'kedar@example.com' },
+            plan: {
+              id: 'plan-1',
+              durationMonths: 3,
+              designation: { id: 'des-1', name: 'Java Developer' },
+              domain: { id: 'dom-1', name: 'Banking' },
+            },
+            project: { id: 'proj-1', title: 'LedgerCore' },
+            taskProgress: [
+              { id: 'tp-1', status: 'APPROVED', submissions: [] },
+              {
+                id: 'tp-2',
+                status: 'SUBMITTED',
+                submissions: [{ id: 'sub-1', reviewStatus: 'PENDING', submittedAt: new Date() }],
+              },
+            ],
+          },
+          team: null,
+        },
+      ]);
+
+      const res = await request(app)
+        .get(`/api/v1/admin/trainers/${TRAINER_ID}/reports`)
+        .set('Authorization', bearerFor(ADMIN_ID, 'ADMIN'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.trainer).toEqual({
+        _id: TRAINER_ID,
+        name: 'Gayatri Patil',
+        email: 'gayupatil2108@gmail.com',
+      });
+      expect(res.body.data.items).toHaveLength(1);
+      expect(res.body.data.items[0]).toMatchObject({
+        student: { _id: 'stu-1', name: 'Kedar Deshmukh', email: 'kedar@example.com' },
+        approvedTasks: 1,
+        totalTasks: 2,
+        pendingSubmissions: 1,
+      });
+    });
+  });
+
+  describe('GET /api/v1/admin/trainer-assignments/summary', () => {
+    test('returns trainer count and overall trainer task counts', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(makeAuthUser(ADMIN_ID, 'ADMIN'));
+      mockPrisma.user.count.mockResolvedValueOnce(4);
+      mockPrisma.trainerAssignment.findMany.mockResolvedValueOnce([
+        { trainerId: 't-1', enrollmentId: 'enr-1', teamId: null },
+        { trainerId: 't-1', enrollmentId: 'enr-2', teamId: null },
+        { trainerId: 't-2', enrollmentId: null, teamId: 'team-1' },
+      ]);
+      mockPrisma.taskProgress.count
+        .mockResolvedValueOnce(15) // totalTasks
+        .mockResolvedValueOnce(6); // approvedTasks
+      mockPrisma.taskSubmission.count
+        .mockResolvedValueOnce(10) // totalSubmissions
+        .mockResolvedValueOnce(3) // pendingTasks
+        .mockResolvedValueOnce(7); // reviewedTasks
+
+      const res = await request(app)
+        .get('/api/v1/admin/trainer-assignments/summary')
+        .set('Authorization', bearerFor(ADMIN_ID, 'ADMIN'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({
+        totalTrainers: 4,
+        assignedTrainers: 2,
+        activeAssignments: 3,
+        totalTasks: 15,
+        approvedTasks: 6,
+        totalSubmissions: 10,
+        reviewedTasks: 7,
+        pendingTasks: 3,
+      });
     });
   });
 });

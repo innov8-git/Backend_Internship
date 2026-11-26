@@ -29,7 +29,11 @@ const { getStorage } = require('../../libs/storage');
 const { streamResumeFile } = require('../trainer-applications/trainer-applications.controller');
 const { sendCertificateIssuedEmail, sendTrainerWelcomeEmail } = require('../../libs/email');
 const { invalidateAuthUserCache } = require('../../common/guards');
-const { executeSubmissionReview } = require('../trainer/trainer.controller');
+const {
+  buildTrainerAssignmentsReport,
+  buildTrainerSubmissionWhere,
+  executeSubmissionReview,
+} = require('../trainer/trainer.controller');
 const {
   createNotification,
   createNotificationsForUsers,
@@ -1123,6 +1127,66 @@ const listTrainerAssignments = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /admin/trainer-assignments/summary
+ * Overall trainer count, assigned tasks, reviewed tasks and pending tasks for the assignments overview.
+ */
+const getTrainerAssignmentsSummary = asyncHandler(async (_req, res) => {
+  const [totalTrainers, activeAssignments] = await Promise.all([
+    prisma.user.count({
+      where: {
+        status: USER_STATUS.ACTIVE,
+        userRoles: { some: { role: { name: ROLES.TRAINER } } },
+      },
+    }),
+    prisma.trainerAssignment.findMany({
+      where: { active: true },
+      select: { trainerId: true, enrollmentId: true, teamId: true },
+    }),
+  ]);
+
+  const assignedTrainers = new Set(activeAssignments.map((a) => a.trainerId).filter(Boolean)).size;
+  const enrollmentIds = [...new Set(activeAssignments.map((a) => a.enrollmentId).filter(Boolean))];
+  const teamIds = [...new Set(activeAssignments.map((a) => a.teamId).filter(Boolean))];
+
+  const progressOr = [];
+  if (enrollmentIds.length > 0) progressOr.push({ enrollmentId: { in: enrollmentIds } });
+  if (teamIds.length > 0) progressOr.push({ teamId: { in: teamIds } });
+
+  const subOr = buildTrainerSubmissionWhere(enrollmentIds, teamIds);
+
+  const [totalTasks, approvedTasks, totalSubmissions, pendingTasks, reviewedTasks] = await Promise.all([
+    progressOr.length > 0
+      ? prisma.taskProgress.count({ where: { OR: progressOr } })
+      : Promise.resolve(0),
+    progressOr.length > 0
+      ? prisma.taskProgress.count({ where: { status: TASK_STATUS.APPROVED, OR: progressOr } })
+      : Promise.resolve(0),
+    subOr.length > 0
+      ? prisma.taskSubmission.count({ where: { OR: subOr } })
+      : Promise.resolve(0),
+    subOr.length > 0
+      ? prisma.taskSubmission.count({ where: { reviewStatus: REVIEW_STATUS.PENDING, OR: subOr } })
+      : Promise.resolve(0),
+    subOr.length > 0
+      ? prisma.taskSubmission.count({
+          where: { reviewStatus: { not: REVIEW_STATUS.PENDING }, OR: subOr },
+        })
+      : Promise.resolve(0),
+  ]);
+
+  ok(res, {
+    totalTrainers,
+    assignedTrainers,
+    activeAssignments: activeAssignments.length,
+    totalTasks,
+    approvedTasks,
+    totalSubmissions,
+    reviewedTasks,
+    pendingTasks,
+  });
+});
+
+/**
  * Shared trainer-assignment logic used by POST /admin/trainer-assignments,
  * POST /admin/trainers/:id/assignments and PATCH /admin/users/:id/trainer.
  * Validates the trainer + target, deactivates the target's previous active
@@ -1314,6 +1378,27 @@ const listTrainerAssignmentsForTrainer = asyncHandler(async (req, res) => {
   });
 
   ok(res, { items, total: items.length });
+});
+
+/**
+ * GET /admin/trainers/:id/reports
+ * Full progress report rows (same shape as GET /trainer/assignments) for one trainer.
+ */
+const getAdminTrainerReports = asyncHandler(async (req, res) => {
+  const trainerId = req.params.id;
+  const trainer = await prisma.user.findUnique({
+    where: { id: trainerId },
+    select: { id: true, name: true, email: true },
+  });
+  if (!trainer) throw ApiError.notFound('Trainer');
+
+  const search = req.query.search ? String(req.query.search).trim() : null;
+  const filtered = await buildTrainerAssignmentsReport(trainer.id, search);
+
+  ok(res, {
+    ...paginatedResponse(filtered, filtered.length, 1, filtered.length || 10),
+    trainer: { _id: trainer.id, name: trainer.name, email: trainer.email },
+  });
 });
 
 /**
@@ -2114,9 +2199,11 @@ module.exports = {
   listAdminAuditLogs,
   listAdminTeams,
   listTrainerAssignments,
+  getTrainerAssignmentsSummary,
   createTrainerAssignment,
   deleteTrainerAssignment,
   listTrainerAssignmentsForTrainer,
+  getAdminTrainerReports,
   assignToTrainer,
   removeTrainerAssignmentForTrainer,
   updateStudentTrainer,
