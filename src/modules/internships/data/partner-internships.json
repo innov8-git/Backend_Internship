@@ -1,0 +1,818 @@
+[
+  {
+    "id": "inlarge-software",
+    "name": "Inlarge Software",
+    "slug": "inlarge-software",
+    "domain": "Banking & FinTech",
+    "domainSlug": "banking",
+    "domainCategory": "banking",
+    "assignedDomains": [
+      "Banking",
+      "Finance"
+    ],
+    "assignedDomainSlugs": [
+      "banking",
+      "finance"
+    ],
+    "tagline": "Enterprise core banking, payment settlement & ledger infrastructure",
+    "location": "100% Online Remote",
+    "rating": "4.9",
+    "hiringBatch": "Batch 2026 / 2027",
+    "gradient": "from-emerald-600 via-teal-600 to-cyan-700",
+    "accentBorder": "border-emerald-500/30 hover:border-emerald-500",
+    "badgeTint": "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
+    "logoBg": "bg-emerald-600",
+    "logoInitials": "IS",
+    "stats": {
+      "teamSize": "250+ Engineers",
+      "placementAssistance": "Placement Support",
+      "mentors": "Senior FinTech Architects"
+    },
+    "roles": [
+      {
+        "id": "inlarge-fintech-eng",
+        "track": "web",
+        "trackLabel": "Web Development",
+        "designation": "Trainee Software Engineer – Web Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – Web Development – Banking & Finance",
+        "trackType": "Full Stack Web Engineering Track",
+        "domains": [
+          "Banking",
+          "Finance"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 142,
+        "description": "As a Trainee Software Engineer – Web Development Intern at Inlarge Software, candidates will work on designing, developing, testing, and maintaining responsive web applications across Banking and Finance domains.",
+        "rolesAndResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "baseResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "keyDeliverables": [
+          "Develop responsive customer banking portals and ledger reconciliation dashboards.",
+          "Implement secure user authentication, role-based access control, and payment gateway workflows.",
+          "Build RESTful APIs and integrate databases with automated transaction testing and audit trails."
+        ],
+        "techStack": [
+          "HTML5 / CSS3",
+          "JavaScript",
+          "React.js",
+          "Core Java",
+          "PostgreSQL",
+          "REST APIs",
+          "Git"
+        ],
+        "skillsRequired": [
+          "HTML5, CSS3, and JavaScript.",
+          "React.js / Angular / Vue.js (any one preferred).",
+          "Core Java / Python / Node.js / PHP (any one preferred).",
+          "SQL and database concepts (MySQL / PostgreSQL / MongoDB).",
+          "REST API development and integration.",
+          "Git and GitHub for version control.",
+          "Responsive web design and UI/UX fundamentals.",
+          "Basic knowledge of authentication and authorization."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+      },
+      {
+        "id": "inlarge-fintech-app",
+        "track": "app",
+        "trackLabel": "App Development",
+        "designation": "Trainee Software Engineer – App Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – App Development – Banking & Finance",
+        "trackType": "Mobile Application Engineering Track",
+        "domains": [
+          "Banking",
+          "Finance"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 128,
+        "description": "As a Trainee Software Engineer – App Development Intern at Inlarge Software, candidates will participate in designing, developing, testing, and maintaining mobile applications for Android and cross-platform environments.",
+        "rolesAndResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "baseResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "keyDeliverables": [
+          "Design and build interactive mobile banking apps with responsive layouts and smooth navigation.",
+          "Implement biometric authentication, secure transaction workflows, and push notifications.",
+          "Integrate RESTful banking services, local database caching, and third-party payment gateways."
+        ],
+        "techStack": [
+          "Kotlin / Java",
+          "Flutter",
+          "Android Studio",
+          "Room DB",
+          "REST APIs",
+          "Firebase",
+          "Git"
+        ],
+        "skillsRequired": [
+          "Core Java / Kotlin / Dart (any one preferred).",
+          "Android Studio and Android development fundamentals.",
+          "Flutter / React Native (any one preferred).",
+          "XML and UI layout fundamentals.",
+          "REST API integration.",
+          "JSON data handling.",
+          "Firebase / SQLite / Room Database / MySQL fundamentals.",
+          "Git and GitHub.",
+          "Mobile application architecture and navigation.",
+          "Basic knowledge of debugging and application testing."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+      }
+    ]
+  },
+  {
+    "id": "couldinger",
+    "name": "Couldinger",
+    "slug": "couldinger",
+    "domain": "Telecom & Networks",
+    "domainSlug": "telecom",
+    "domainCategory": "telecom",
+    "assignedDomains": [
+      "Telecom",
+      "E-commerce"
+    ],
+    "assignedDomainSlugs": [
+      "telecom",
+      "e-commerce"
+    ],
+    "tagline": "Next-gen telecom orchestration, 5G edge routing & e-commerce platforms",
+    "location": "100% Online Remote",
+    "rating": "4.8",
+    "hiringBatch": "Batch 2026 / 2027",
+    "gradient": "from-blue-600 via-indigo-600 to-sky-600",
+    "accentBorder": "border-blue-500/30 hover:border-blue-500",
+    "badgeTint": "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+    "logoBg": "bg-blue-600",
+    "logoInitials": "CD",
+    "stats": {
+      "teamSize": "400+ Systems Engineers",
+      "placementAssistance": "Placement Support",
+      "mentors": "Principal Cloud Architects"
+    },
+    "roles": [
+      {
+        "id": "couldinger-cloud-devops",
+        "track": "web",
+        "trackLabel": "Web Development",
+        "designation": "Trainee Software Engineer – Web Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – Web Development – Telecom & E-commerce",
+        "trackType": "Full Stack Web Engineering Track",
+        "domains": [
+          "Telecom",
+          "E-commerce"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 189,
+        "description": "As a Trainee Software Engineer – Web Development Intern at Couldinger, candidates will work on designing, developing, testing, and maintaining responsive web applications across Telecom and E-commerce domains.",
+        "rolesAndResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "baseResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "keyDeliverables": [
+          "Develop responsive subscriber self-care and retail shopping web portals using modern frameworks.",
+          "Build backend REST APIs for subscriber billing, plan recharges, product catalogs, and cart checkouts.",
+          "Work with databases and third-party APIs for payment gateways, SMS notifications, and telemetry reporting."
+        ],
+        "techStack": [
+          "HTML5 / CSS3",
+          "JavaScript",
+          "React.js",
+          "Node.js",
+          "PostgreSQL",
+          "Docker",
+          "Git"
+        ],
+        "skillsRequired": [
+          "HTML5, CSS3, and JavaScript.",
+          "React.js / Angular / Vue.js (any one preferred).",
+          "Core Java / Python / Node.js / PHP (any one preferred).",
+          "SQL and database concepts (MySQL / PostgreSQL / MongoDB).",
+          "REST API development and integration.",
+          "Git and GitHub for version control.",
+          "Responsive web design and UI/UX fundamentals.",
+          "Basic knowledge of authentication and authorization."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+      },
+      {
+        "id": "couldinger-mobile-app",
+        "track": "app",
+        "trackLabel": "App Development",
+        "designation": "Trainee Software Engineer – App Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – App Development – Telecom & E-commerce",
+        "trackType": "Mobile Application Engineering Track",
+        "domains": [
+          "Telecom",
+          "E-commerce"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 145,
+        "description": "As a Trainee Software Engineer – App Development Intern at Couldinger, candidates will participate in designing, developing, testing, and maintaining mobile applications for Android and cross-platform environments.",
+        "rolesAndResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "baseResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "keyDeliverables": [
+          "Build mobile application interfaces for catalog shopping, instant mobile recharges, and order tracking.",
+          "Integrate Google Maps SDK for store locations, push notifications for flash deals, and payment gateways.",
+          "Manage offline caching with SQLite/Room and optimize app performance across Android devices."
+        ],
+        "techStack": [
+          "Flutter / Dart",
+          "React Native",
+          "Android Studio",
+          "Firebase",
+          "SQLite",
+          "REST APIs",
+          "Git"
+        ],
+        "skillsRequired": [
+          "Core Java / Kotlin / Dart (any one preferred).",
+          "Android Studio and Android development fundamentals.",
+          "Flutter / React Native (any one preferred).",
+          "XML and UI layout fundamentals.",
+          "REST API integration.",
+          "JSON data handling.",
+          "Firebase / SQLite / Room Database / MySQL fundamentals.",
+          "Git and GitHub.",
+          "Mobile application architecture and navigation.",
+          "Basic knowledge of debugging and application testing."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+      }
+    ]
+  },
+  {
+    "id": "proton",
+    "name": "Proton",
+    "slug": "proton",
+    "domain": "Healthcare & MedTech",
+    "domainSlug": "healthcare",
+    "domainCategory": "healthcare",
+    "assignedDomains": [
+      "Healthcare",
+      "Insurance"
+    ],
+    "assignedDomainSlugs": [
+      "healthcare",
+      "insurance"
+    ],
+    "tagline": "HIPAA-compliant health tech, clinical telemetry & insurance claims",
+    "location": "100% Online Remote",
+    "rating": "4.9",
+    "hiringBatch": "Batch 2026 / 2027",
+    "gradient": "from-rose-600 via-pink-600 to-amber-600",
+    "accentBorder": "border-rose-500/30 hover:border-rose-500",
+    "badgeTint": "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800",
+    "logoBg": "bg-rose-600",
+    "logoInitials": "PR",
+    "stats": {
+      "teamSize": "180+ MedTech Engineers",
+      "placementAssistance": "Placement Support",
+      "mentors": "Healthcare IT Directors"
+    },
+    "roles": [
+      {
+        "id": "proton-healthcare-fullstack",
+        "track": "web",
+        "trackLabel": "Web Development",
+        "designation": "Trainee Software Engineer – Web Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – Web Development – Healthcare & Insurance",
+        "trackType": "Full Stack Web Engineering Track",
+        "domains": [
+          "Healthcare",
+          "Insurance"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 118,
+        "description": "As a Trainee Software Engineer – Web Development Intern at Proton, candidates will work on designing, developing, testing, and maintaining responsive web applications across Healthcare and Insurance domains.",
+        "rolesAndResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "baseResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "keyDeliverables": [
+          "Build accessible, responsive patient and doctor portals with strict data privacy and role-based access control.",
+          "Develop backend REST APIs for health records, appointment scheduling, and insurance claim adjudication.",
+          "Integrate third-party diagnostic APIs, laboratory reports, and encrypted databases."
+        ],
+        "techStack": [
+          "HTML5 / CSS3",
+          "JavaScript",
+          "React.js",
+          "Node.js / Python",
+          "MongoDB",
+          "REST APIs",
+          "Git"
+        ],
+        "skillsRequired": [
+          "HTML5, CSS3, and JavaScript.",
+          "React.js / Angular / Vue.js (any one preferred).",
+          "Core Java / Python / Node.js / PHP (any one preferred).",
+          "SQL and database concepts (MySQL / PostgreSQL / MongoDB).",
+          "REST API development and integration.",
+          "Git and GitHub for version control.",
+          "Responsive web design and UI/UX fundamentals.",
+          "Basic knowledge of authentication and authorization."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+      },
+      {
+        "id": "proton-healthcare-app",
+        "track": "app",
+        "trackLabel": "App Development",
+        "designation": "Trainee Software Engineer – App Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – App Development – Healthcare & Insurance",
+        "trackType": "Mobile Application Engineering Track",
+        "domains": [
+          "Healthcare",
+          "Insurance"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 112,
+        "description": "As a Trainee Software Engineer – App Development Intern at Proton, candidates will participate in designing, developing, testing, and maintaining mobile applications for Android and cross-platform environments.",
+        "rolesAndResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "baseResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "keyDeliverables": [
+          "Develop mobile health interfaces for vital tracking, doctor video consult booking, and policy cards.",
+          "Integrate camera document scanning for medical bills/prescriptions and offline-first medication reminders.",
+          "Implement patient authentication, secure session handling, and push notifications for health alerts."
+        ],
+        "techStack": [
+          "Kotlin / Java",
+          "Flutter",
+          "Android Studio",
+          "Room DB",
+          "CameraX",
+          "REST APIs",
+          "Git"
+        ],
+        "skillsRequired": [
+          "Core Java / Kotlin / Dart (any one preferred).",
+          "Android Studio and Android development fundamentals.",
+          "Flutter / React Native (any one preferred).",
+          "XML and UI layout fundamentals.",
+          "REST API integration.",
+          "JSON data handling.",
+          "Firebase / SQLite / Room Database / MySQL fundamentals.",
+          "Git and GitHub.",
+          "Mobile application architecture and navigation.",
+          "Basic knowledge of debugging and application testing."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+      }
+    ]
+  },
+  {
+    "id": "ady-nexes",
+    "name": "Ady Nexes",
+    "slug": "ady-nexes",
+    "domain": "Enterprise Cloud & AI",
+    "domainSlug": "enterprise-ai",
+    "domainCategory": "enterprise",
+    "assignedDomains": [
+      "ERP/CRM",
+      "Loan"
+    ],
+    "assignedDomainSlugs": [
+      "erp-crm",
+      "loan"
+    ],
+    "tagline": "Multi-tenant enterprise SaaS, CRM pipelines & loan management systems",
+    "location": "100% Online Remote",
+    "rating": "4.9",
+    "hiringBatch": "Batch 2026 / 2027",
+    "gradient": "from-purple-600 via-violet-600 to-indigo-700",
+    "accentBorder": "border-purple-500/30 hover:border-purple-500",
+    "badgeTint": "bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
+    "logoBg": "bg-purple-600",
+    "logoInitials": "AN",
+    "stats": {
+      "teamSize": "320+ Platform Developers",
+      "placementAssistance": "Placement Support",
+      "mentors": "Principal Enterprise Engineers"
+    },
+    "roles": [
+      {
+        "id": "ady-nexes-enterprise-ai",
+        "track": "web",
+        "trackLabel": "Web Development",
+        "designation": "Trainee Software Engineer – Web Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – Web Development – ERP/CRM & Loan",
+        "trackType": "Full Stack Web Engineering Track",
+        "domains": [
+          "ERP/CRM",
+          "Loan"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 230,
+        "description": "As a Trainee Software Engineer – Web Development Intern at Ady Nexes, candidates will work on designing, developing, testing, and maintaining responsive web applications across ERP/CRM and Loan domains.",
+        "rolesAndResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "baseResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "keyDeliverables": [
+          "Develop responsive enterprise dashboards, CRM kanban lead funnels, and loan EMI calculation tools.",
+          "Implement backend business logic, multi-tenant authentication, and RESTful APIs with relational databases.",
+          "Build automated report generation, customer notification workflows, and administrative panels."
+        ],
+        "techStack": [
+          "HTML5 / CSS3",
+          "JavaScript",
+          "React.js",
+          "Python / FastAPI",
+          "PostgreSQL",
+          "Docker",
+          "Git"
+        ],
+        "skillsRequired": [
+          "HTML5, CSS3, and JavaScript.",
+          "React.js / Angular / Vue.js (any one preferred).",
+          "Core Java / Python / Node.js / PHP (any one preferred).",
+          "SQL and database concepts (MySQL / PostgreSQL / MongoDB).",
+          "REST API development and integration.",
+          "Git and GitHub for version control.",
+          "Responsive web design and UI/UX fundamentals.",
+          "Basic knowledge of authentication and authorization."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+      },
+      {
+        "id": "ady-nexes-mobile-app",
+        "track": "app",
+        "trackLabel": "App Development",
+        "designation": "Trainee Software Engineer – App Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – App Development – ERP/CRM & Loan",
+        "trackType": "Mobile Application Engineering Track",
+        "domains": [
+          "ERP/CRM",
+          "Loan"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 160,
+        "description": "As a Trainee Software Engineer – App Development Intern at Ady Nexes, candidates will participate in designing, developing, testing, and maintaining mobile applications for Android and cross-platform environments.",
+        "rolesAndResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "baseResponsibilities": [
+          "Design and develop user-friendly mobile applications for Android and cross-platform environments.",
+          "Build interactive application interfaces with proper navigation and responsive layouts.",
+          "Develop application functionality using Java, Kotlin, Flutter, or React Native.",
+          "Integrate mobile applications with backend services and RESTful APIs.",
+          "Implement user registration, login, authentication, and authorization functionalities.",
+          "Integrate databases and manage application data efficiently.",
+          "Implement features such as notifications, user profiles, dashboards, and transaction workflows.",
+          "Integrate third-party services such as payment gateways, maps, and notification services.",
+          "Perform application testing, debugging, and performance optimization.",
+          "Ensure application compatibility across different devices and screen sizes.",
+          "Collaborate with backend developers, UI/UX designers, and project team members.",
+          "Prepare technical documentation and participate in project reviews.",
+          "Understand domain-specific requirements and implement mobile solutions based on real-world business scenarios."
+        ],
+        "keyDeliverables": [
+          "Design and build mobile apps for field agents with interactive EMI calculators and lead tracking.",
+          "Implement offline draft synchronization with SQLite/Room and push notifications for assignment alerts.",
+          "Integrate camera for KYC document capture, digital signature capture, and GPS location tagging."
+        ],
+        "techStack": [
+          "Flutter / Dart",
+          "React Native",
+          "Android Studio",
+          "SQLite",
+          "Firebase",
+          "REST APIs",
+          "Git"
+        ],
+        "skillsRequired": [
+          "Core Java / Kotlin / Dart (any one preferred).",
+          "Android Studio and Android development fundamentals.",
+          "Flutter / React Native (any one preferred).",
+          "XML and UI layout fundamentals.",
+          "REST API integration.",
+          "JSON data handling.",
+          "Firebase / SQLite / Room Database / MySQL fundamentals.",
+          "Git and GitHub.",
+          "Mobile application architecture and navigation.",
+          "Basic knowledge of debugging and application testing."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+      }
+    ]
+  }
+]
