@@ -8,12 +8,76 @@ const logger = require('../../../libs/logger');
 const otpService = require('./otp.service');
 const googleAuthService = require('./google-auth.service');
 const { invalidateAuthUserCache } = require('../../../common/guards');
+const { normalizeReferralCode } = require('../../admin/services/tpo-code.util');
 
 /**
  * Authentication Service
  * Implements business logic for registration, authentication, password recovery, and email verification.
  */
 class AuthService {
+  /**
+   * Resolves an optional TPO referral code.
+   * Returns null when no code is supplied; throws 422 when invalid or inactive.
+   */
+  async resolveActiveTpoByReferralCode(rawCode) {
+    const normalized = normalizeReferralCode(rawCode);
+    if (!normalized) return null;
+
+    const tpo = await prisma.tpo.findUnique({
+      where: { referralCode: normalized },
+      select: {
+        id: true,
+        name: true,
+        college: true,
+        referralCode: true,
+        isActive: true,
+      },
+    });
+
+    if (!tpo || !tpo.isActive) {
+      throw ApiError.validationError([
+        {
+          field: 'referralCode',
+          message: 'Invalid or inactive TPO reference code. Please double-check with your TPO.',
+        },
+      ]);
+    }
+
+    return tpo;
+  }
+
+  /**
+   * Public validation helper for live registration feedback.
+   */
+  async validateReferralCode(rawCode) {
+    const normalized = normalizeReferralCode(rawCode);
+    if (!normalized) {
+      throw ApiError.notFound('Reference code not found.');
+    }
+
+    const tpo = await prisma.tpo.findUnique({
+      where: { referralCode: normalized },
+      select: {
+        id: true,
+        name: true,
+        college: true,
+        referralCode: true,
+        isActive: true,
+      },
+    });
+
+    if (!tpo || !tpo.isActive) {
+      throw ApiError.notFound('Invalid or inactive TPO reference code.');
+    }
+
+    return {
+      valid: true,
+      referralCode: tpo.referralCode,
+      tpoName: tpo.name,
+      college: tpo.college,
+    };
+  }
+
   /**
    * Register a new Student or Trainer.
    * @param {object} dto - Validated registration payload
@@ -31,6 +95,8 @@ class AuthService {
         [{ field: 'email', message: 'This email is already in use.' }],
       );
     }
+
+    const referredTpo = await this.resolveActiveTpoByReferralCode(dto.referralCode);
 
     const passwordHash = await hashPassword(dto.password);
     const roleName = 'STUDENT';
@@ -53,6 +119,8 @@ class AuthService {
           passwordHash,
           status: 'PENDING_VERIFICATION',
           emailVerified: false,
+          referredByTpoId: referredTpo?.id || null,
+          referralCodeUsed: referredTpo?.referralCode || null,
         },
       });
 
@@ -91,6 +159,7 @@ class AuthService {
       roles: [roleName],
       status: result.status,
       emailVerified: result.emailVerified,
+      referralCodeUsed: result.referralCodeUsed || null,
     };
   }
 
@@ -491,6 +560,7 @@ class AuthService {
         user = await prisma.user.update({ where: { id: user.id }, data: updates });
       }
     } else {
+      const referredTpo = await this.resolveActiveTpoByReferralCode(payload.referralCode);
       const roleRecord = await prisma.roleModel.findUnique({ where: { name: 'STUDENT' } });
       if (!roleRecord) {
         throw ApiError.internal('System role "STUDENT" is not configured. Please run seed script.');
@@ -508,6 +578,8 @@ class AuthService {
             googleId: profile.sub,
             authProvider: 'GOOGLE',
             avatarUrl: profile.picture || null,
+            referredByTpoId: referredTpo?.id || null,
+            referralCodeUsed: referredTpo?.referralCode || null,
           },
         });
         await tx.userRole.create({ data: { userId: createdUser.id, roleId: roleRecord.id } });

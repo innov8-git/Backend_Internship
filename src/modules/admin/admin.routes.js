@@ -3,6 +3,7 @@ const adminController = require('./admin.controller');
 const adminCatalogController = require('./admin-catalog.controller');
 const adminProjectsController = require('./admin-projects.controller');
 const adminQuestionsController = require('./admin-questions.controller');
+const adminTpoController = require('./admin-tpo.controller');
 const internshipsController = require('../internships/internships.controller');
 const { validateInternshipPayload } = require('../internships/internships.validator');
 const trainerApplicationsController = require('../trainer-applications/trainer-applications.controller');
@@ -13,6 +14,10 @@ const {
   createTrainerSchema,
   updateTrainerPrivilegeSchema,
 } = require('./dto/admin-trainer.dto');
+const {
+  createTpoSchema,
+  updateTpoSchema,
+} = require('./dto/admin-tpo.dto');
 const {
   acceptTrainerApplicationSchema,
 } = require('../trainer-applications/trainer-applications.dto');
@@ -122,5 +127,13 @@ router.post(
   trainerApplicationsController.acceptTrainerApplication,
 );
 router.delete('/trainer-applications/:id', trainerApplicationsController.deleteTrainerApplication);
+
+// ─── TPOs (Referral Codes & Student Attribution) ─────────────────────────────
+router.get('/tpos', adminTpoController.listAdminTpos);
+router.post('/tpos', validate(createTpoSchema), adminTpoController.createAdminTpo);
+router.get('/tpos/:id', adminTpoController.getAdminTpoById);
+router.patch('/tpos/:id', validate(updateTpoSchema), adminTpoController.updateAdminTpo);
+router.delete('/tpos/:id', adminTpoController.deleteAdminTpo);
+router.get('/tpos/:id/referrals', adminTpoController.listTpoReferrals);
 
 module.exports = router;
