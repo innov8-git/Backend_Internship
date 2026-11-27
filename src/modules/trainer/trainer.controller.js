@@ -554,10 +554,7 @@ const getTrainerStats = asyncHandler(async (req, res) => {
   });
 });
 
-const getTrainerAssignments = asyncHandler(async (req, res) => {
-  const trainerId = req.user.id;
-  const search = req.query.search ? String(req.query.search).trim() : null;
-
+async function buildTrainerAssignmentsReport(trainerId, search = null) {
   const assignments = await prisma.trainerAssignment.findMany({
     where: { trainerId, active: true },
     include: {
@@ -677,7 +674,7 @@ const getTrainerAssignments = asyncHandler(async (req, res) => {
     }
   }
 
-  const filtered = search
+  return search
     ? rows.filter(
         (r) =>
           (r.student?.name && r.student.name.toLowerCase().includes(search.toLowerCase())) ||
@@ -685,6 +682,12 @@ const getTrainerAssignments = asyncHandler(async (req, res) => {
           (r.team?.name && r.team.name.toLowerCase().includes(search.toLowerCase())),
       )
     : rows;
+}
+
+const getTrainerAssignments = asyncHandler(async (req, res) => {
+  const trainerId = req.user.id;
+  const search = req.query.search ? String(req.query.search).trim() : null;
+  const filtered = await buildTrainerAssignmentsReport(trainerId, search);
 
   ok(res, paginatedResponse(filtered, filtered.length, 1, filtered.length || 10));
 });
@@ -937,6 +940,8 @@ const reviewSubmission = asyncHandler(async (req, res) => {
 module.exports = {
   getTrainerStats,
   getTrainerAssignments,
+  buildTrainerAssignmentsReport,
+  buildTrainerSubmissionWhere,
   getTrainerSubmissions,
   getTrainerSubmissionById,
   reviewSubmission,
