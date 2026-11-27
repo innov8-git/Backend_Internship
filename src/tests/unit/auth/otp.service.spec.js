@@ -10,10 +10,14 @@ describe('OtpService Unit Tests', () => {
   const testEmail = 'otp-unit-test@alfre.com';
 
   afterAll(async () => {
-    // Clean up test records
-    await prisma.otpToken.deleteMany({
-      where: { email: testEmail },
-    });
+    try {
+      // Clean up test records
+      await prisma.otpToken.deleteMany({
+        where: { email: testEmail },
+      });
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 
   beforeEach(async () => {

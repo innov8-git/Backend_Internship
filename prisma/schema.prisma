@@ -20,6 +20,7 @@ enum RoleName {
   STUDENT
   TRAINER
   ADMIN
+  TPO
 }
 
 enum TokenType {
