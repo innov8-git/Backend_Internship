@@ -4,7 +4,7 @@ process.env.NODE_ENV = 'test';
 
 const mockPrisma = {
   user: { findUnique: jest.fn(), count: jest.fn() },
-  enrollment: { findUnique: jest.fn(), findMany: jest.fn() },
+  enrollment: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   team: { findUnique: jest.fn() },
   taskProgress: { count: jest.fn() },
   taskSubmission: { count: jest.fn() },
@@ -410,6 +410,63 @@ describe('Admin trainer assignment endpoints', () => {
         totalSubmissions: 10,
         reviewedTasks: 7,
         pendingTasks: 3,
+      });
+    });
+  });
+
+  describe('GET /api/v1/admin/enrollments', () => {
+    test('returns unassigned active individual enrollments when unassigned=true', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(makeAuthUser(ADMIN_ID, 'ADMIN'));
+      mockPrisma.enrollment.count.mockResolvedValueOnce(1);
+      mockPrisma.enrollment.findMany.mockResolvedValueOnce([
+        {
+          id: 'enr-unassigned',
+          userId: STUDENT_ID,
+          teamId: null,
+          planId: 'plan-1',
+          enrollmentType: 'INDIVIDUAL',
+          status: 'ACTIVE',
+          priceSnapshot: 1999,
+          createdAt: new Date(),
+          activatedAt: new Date(),
+          completedAt: null,
+          user: { id: STUDENT_ID, name: 'Sanika Waske', email: 'sanika@example.com' },
+          team: null,
+          plan: {
+            id: 'plan-1',
+            durationMonths: 2,
+            basePrice: 1999,
+            currency: 'INR',
+            designation: { id: 'des-1', name: 'Java Developer' },
+            domain: { id: 'dom-1', name: 'Banking' },
+          },
+          payments: [{ status: 'PAID' }],
+          trainerAssignments: [],
+          taskProgress: [],
+        },
+      ]);
+
+      const res = await request(app)
+        .get('/api/v1/admin/enrollments?status=ACTIVE,IN_PROGRESS&enrollmentType=INDIVIDUAL&unassigned=true')
+        .set('Authorization', bearerFor(ADMIN_ID, 'ADMIN'));
+
+      expect(res.status).toBe(200);
+      expect(mockPrisma.enrollment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { in: ['ACTIVE', 'IN_PROGRESS'] },
+            enrollmentType: 'INDIVIDUAL',
+            teamId: null,
+            trainerAssignments: { none: { active: true } },
+          }),
+        }),
+      );
+      expect(res.body.data.items).toHaveLength(1);
+      expect(res.body.data.items[0]).toMatchObject({
+        _id: 'enr-unassigned',
+        student: { _id: STUDENT_ID, name: 'Sanika Waske', email: 'sanika@example.com' },
+        enrollmentType: 'INDIVIDUAL',
+        hasTrainer: false,
       });
     });
   });

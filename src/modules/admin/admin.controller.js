@@ -575,10 +575,23 @@ const updateUserStatus = asyncHandler(async (req, res) => {
 
 const listAdminEnrollments = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 10);
-  const { search, status, designationId, from, to } = req.query;
+  const { search, status, enrollmentType, unassigned, designationId, from, to } = req.query;
+
+  const statuses = status
+    ? String(status)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
 
   const where = {
-    ...(status && { status }),
+    ...(statuses.length === 1 && { status: statuses[0] }),
+    ...(statuses.length > 1 && { status: { in: statuses } }),
+    ...(enrollmentType && { enrollmentType: String(enrollmentType) }),
+    ...(unassigned === 'true' && {
+      teamId: null,
+      trainerAssignments: { none: { active: true } },
+    }),
     ...(designationId && { plan: { designationId: String(designationId) } }),
     ...(from || to
       ? {
@@ -606,6 +619,7 @@ const listAdminEnrollments = asyncHandler(async (req, res) => {
         team: true,
         plan: { include: { designation: true, domain: true } },
         payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+        trainerAssignments: { where: { active: true }, take: 1, select: { id: true, trainerId: true } },
         taskProgress: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -621,6 +635,7 @@ const listAdminEnrollments = asyncHandler(async (req, res) => {
       _id: e.id,
       userId: e.userId,
       student: { _id: e.user.id, name: e.user.name, email: e.user.email },
+      enrollmentType: e.enrollmentType,
       teamId: e.teamId || null,
       team: e.team ? { _id: e.team.id, name: e.team.name } : null,
       planId: e.planId,
@@ -633,6 +648,7 @@ const listAdminEnrollments = asyncHandler(async (req, res) => {
         domain: e.plan.domain ? { _id: e.plan.domain.id, name: e.plan.domain.name } : null,
       },
       status: e.status,
+      hasTrainer: (e.trainerAssignments?.length ?? 0) > 0,
       paymentStatus: latestPayment?.status || null,
       priceSnapshot: e.priceSnapshot,
       progress: {
@@ -1169,10 +1185,13 @@ const listAdminAuditLogs = asyncHandler(async (req, res) => {
 
 const listAdminTeams = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 20);
-  const { search, status } = req.query;
+  const { search, status, unassigned } = req.query;
 
   const where = {
     ...(status && { status }),
+    ...(unassigned === 'true' && {
+      trainerAssignments: { none: { active: true } },
+    }),
     ...(search && {
       OR: [
         { name: { contains: String(search), mode: 'insensitive' } },
