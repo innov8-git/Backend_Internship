@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 
 // Excludes visually ambiguous characters (0, O, 1, I, L) for clean sharing via WhatsApp/text.
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const HONORIFICS = new Set(['DR', 'PROF', 'MR', 'MRS', 'MS', 'MISS', 'SMT', 'SHRI', 'ER']);
 
 /**

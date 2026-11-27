@@ -5,6 +5,7 @@ const { prisma } = require('../../../database');
 const { ApiError, hashPassword, comparePassword } = require('../../../utils');
 const tokenService = require('./token.service');
 const logger = require('../../../libs/logger');
+const { sendPasswordResetEmail } = require('../../../libs/email');
 const otpService = require('./otp.service');
 const googleAuthService = require('./google-auth.service');
 const { invalidateAuthUserCache } = require('../../../common/guards');
@@ -279,9 +280,14 @@ class AuthService {
 
     try {
       const rawResetToken = await tokenService.createPasswordResetToken(user.id);
-      logger.info(`[Auth] Password reset token created for ${user.email}: ${rawResetToken}`);
-      // In production with SMTP configured:
-      // await sendEmail({ to: user.email, template: 'reset-password', payload: { token: rawResetToken } });
+      const emailJob = await sendPasswordResetEmail(
+        user.email,
+        user.name || 'there',
+        rawResetToken,
+      );
+      if (emailJob?.status === 'FAILED') {
+        logger.warn(`Failed to dispatch password reset email for ${user.email}`);
+      }
     } catch (err) {
       logger.warn(`Failed to dispatch password reset email for ${user.email}:`, err.message);
     }

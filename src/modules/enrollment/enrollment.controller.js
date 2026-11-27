@@ -1128,6 +1128,9 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
           internshipId,
           companyName,
           domainName: domain?.name || domainName,
+          projectId: project?.id || projectId,
+          projectTitle: project?.title || projectTitle,
+          projectSlug: project?.slug,
           durationMonths: durMonths,
         })
       : null;

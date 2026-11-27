@@ -3,25 +3,23 @@
     "id": "inlarge-software",
     "name": "Inlarge Software",
     "slug": "inlarge-software",
-    "domain": "Banking & FinTech",
+    "domain": "Banking Domain",
     "domainSlug": "banking",
     "domainCategory": "banking",
     "assignedDomains": [
-      "Banking",
-      "Finance"
+      "Banking"
     ],
     "assignedDomainSlugs": [
-      "banking",
-      "finance"
+      "banking"
     ],
     "tagline": "Enterprise core banking, payment settlement & ledger infrastructure",
     "location": "100% Online Remote",
     "rating": "4.9",
     "hiringBatch": "Batch 2026 / 2027",
-    "gradient": "from-emerald-600 via-teal-600 to-cyan-700",
-    "accentBorder": "border-emerald-500/30 hover:border-emerald-500",
-    "badgeTint": "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
-    "logoBg": "bg-emerald-600",
+    "gradient": "from-blue-600 via-indigo-600 to-sky-600",
+    "accentBorder": "border-blue-500/30 hover:border-blue-500",
+    "badgeTint": "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+    "logoBg": "bg-blue-600",
     "logoInitials": "IS",
     "stats": {
       "teamSize": "250+ Engineers",
@@ -35,11 +33,10 @@
         "trackLabel": "Web Development",
         "designation": "Trainee Software Engineer – Web Development",
         "role": "Trainee Software Engineer",
-        "fullRoleName": "Trainee Software Engineer – Web Development – Banking & Finance",
+        "fullRoleName": "Trainee Software Engineer – Web Development – Banking",
         "trackType": "Full Stack Web Engineering Track",
         "domains": [
-          "Banking",
-          "Finance"
+          "Banking"
         ],
         "level": "Undergraduate / Graduate",
         "duration": "1 to 6 Months",
@@ -52,8 +49,8 @@
           "6 months"
         ],
         "workMode": "100% Online Remote",
-        "applicantsCount": 142,
-        "description": "As a Trainee Software Engineer – Web Development Intern at Inlarge Software, candidates will work on designing, developing, testing, and maintaining responsive web applications across Banking and Finance domains.",
+        "applicantsCount": 120,
+        "description": "As a Trainee Software Engineer – Web Development Intern at Inlarge Software, candidates will work on designing, developing, testing, and maintaining production applications across the Banking domains.",
         "rolesAndResponsibilities": [
           "Develop responsive and user-friendly web applications using modern frontend technologies.",
           "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
@@ -83,16 +80,16 @@
           "Work on domain-specific business requirements and implement real-world software solutions."
         ],
         "keyDeliverables": [
-          "Develop responsive customer banking portals and ledger reconciliation dashboards.",
-          "Implement secure user authentication, role-based access control, and payment gateway workflows.",
-          "Build RESTful APIs and integrate databases with automated transaction testing and audit trails."
+          "Develop responsive, scalable application modules across Banking.",
+          "Implement authentication, state management, and modern API endpoints.",
+          "Collaborate on git version control, code reviews, and production testing."
         ],
         "techStack": [
-          "HTML5 / CSS3",
+          "HTML5",
+          "CSS3",
           "JavaScript",
           "React.js",
-          "Core Java",
-          "PostgreSQL",
+          "Node.js",
           "REST APIs",
           "Git"
         ],
@@ -113,7 +110,7 @@
         ],
         "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals.",
         "pricing": {
-          "concessionPercent": 0,
+          "concessionPercent": 10,
           "defaultPrices": {
             "1": 999,
             "2": 1499,
@@ -122,16 +119,20 @@
           },
           "domainPrices": {
             "Banking": {
-              "1": 999,
-              "2": 1499,
-              "3": 1999,
-              "6": 2999
-            },
-            "Finance": {
-              "1": 999,
-              "2": 1499,
-              "3": 1999,
-              "6": 2999
+              "1": 1000,
+              "2": 1500,
+              "3": 2000,
+              "6": 3000
+            }
+          },
+          "projectPrices": {
+            "Banking": {
+              "proj-apexpay": {
+                "1": 1200,
+                "2": 1800,
+                "3": 2500,
+                "6": 4000
+              }
             }
           }
         }
@@ -989,136 +990,6 @@
               "6": 2999
             },
             "Loan": {
-              "1": 999,
-              "2": 1499,
-              "3": 1999,
-              "6": 2999
-            }
-          }
-        }
-      }
-    ]
-  },
-  {
-    "id": "logo-corp",
-    "name": "Logo Corp",
-    "slug": "logo-corp",
-    "domain": "Banking Domain",
-    "domainSlug": "banking",
-    "domainCategory": "banking",
-    "assignedDomains": [
-      "Banking"
-    ],
-    "assignedDomainSlugs": [
-      "banking"
-    ],
-    "tagline": "Logo Corp engineering internship program",
-    "location": "100% Online Remote",
-    "rating": "4.9",
-    "hiringBatch": "Batch 2026 / 2027",
-    "gradient": "from-blue-600 via-indigo-600 to-sky-600",
-    "accentBorder": "border-blue-500/30 hover:border-blue-500",
-    "badgeTint": "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
-    "logoBg": "bg-blue-600",
-    "logoInitials": "LC",
-    "stats": {
-      "teamSize": "100+ Engineers",
-      "placementAssistance": "Placement Support",
-      "mentors": "Senior Technical Architects"
-    },
-    "roles": [
-      {
-        "id": "logo-corp-web-1795765430008",
-        "track": "web",
-        "trackLabel": "Web Development",
-        "designation": "Trainee Software Engineer – Web Development",
-        "role": "Trainee Software Engineer",
-        "fullRoleName": "Trainee Software Engineer – Web Development – Banking",
-        "trackType": "Full Stack Web Engineering Track",
-        "domains": [
-          "Banking"
-        ],
-        "level": "Undergraduate / Graduate",
-        "duration": "1 to 6 Months",
-        "durationsList": [
-          "1 month",
-          "2 months",
-          "3 months",
-          "4 months",
-          "5 months",
-          "6 months"
-        ],
-        "workMode": "100% Online Remote",
-        "applicantsCount": 120,
-        "description": "As a Trainee Software Engineer – Web Development Intern at Logo Corp, candidates will work on designing, developing, testing, and maintaining production applications across the Banking domains.",
-        "rolesAndResponsibilities": [
-          "Develop responsive and user-friendly web applications using modern frontend technologies.",
-          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
-          "Develop backend functionality, business logic, and RESTful APIs.",
-          "Work with databases to store, retrieve, update, and manage application data.",
-          "Implement user authentication, authorization, and role-based access control.",
-          "Integrate frontend applications with backend services and third-party APIs.",
-          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
-          "Perform application testing, debugging, and troubleshooting.",
-          "Collaborate with team members to understand project requirements and implement solutions.",
-          "Maintain technical documentation and follow software development best practices.",
-          "Participate in project reviews, code reviews, and development activities.",
-          "Work on domain-specific business requirements and implement real-world software solutions."
-        ],
-        "baseResponsibilities": [
-          "Develop responsive and user-friendly web applications using modern frontend technologies.",
-          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
-          "Develop backend functionality, business logic, and RESTful APIs.",
-          "Work with databases to store, retrieve, update, and manage application data.",
-          "Implement user authentication, authorization, and role-based access control.",
-          "Integrate frontend applications with backend services and third-party APIs.",
-          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
-          "Perform application testing, debugging, and troubleshooting.",
-          "Collaborate with team members to understand project requirements and implement solutions.",
-          "Maintain technical documentation and follow software development best practices.",
-          "Participate in project reviews, code reviews, and development activities.",
-          "Work on domain-specific business requirements and implement real-world software solutions."
-        ],
-        "keyDeliverables": [
-          "Develop responsive, scalable application modules across Banking.",
-          "Implement authentication, state management, and modern API endpoints.",
-          "Collaborate on git version control, code reviews, and production testing."
-        ],
-        "techStack": [
-          "HTML5",
-          "CSS3",
-          "JavaScript",
-          "React.js",
-          "Node.js",
-          "REST APIs",
-          "Git"
-        ],
-        "skillsRequired": [
-          "HTML5, CSS3, and JavaScript.",
-          "React.js / Angular / Vue.js (any one preferred).",
-          "Core Java / Python / Node.js / PHP (any one preferred).",
-          "SQL and database concepts (MySQL / PostgreSQL / MongoDB).",
-          "REST API development and integration.",
-          "Git and GitHub for version control.",
-          "Responsive web design and UI/UX fundamentals.",
-          "Basic knowledge of authentication and authorization."
-        ],
-        "perks": [
-          "Official Internship Completion Letter",
-          "Dedicated 1-on-1 Industry Mentor",
-          "Placement Support & Interview Drives"
-        ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals.",
-        "pricing": {
-          "concessionPercent": 0,
-          "defaultPrices": {
-            "1": 999,
-            "2": 1499,
-            "3": 1999,
-            "6": 2999
-          },
-          "domainPrices": {
-            "Banking": {
               "1": 999,
               "2": 1499,
               "3": 1999,
