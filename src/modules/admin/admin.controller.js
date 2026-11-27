@@ -29,7 +29,11 @@ const { getStorage } = require('../../libs/storage');
 const { streamResumeFile } = require('../trainer-applications/trainer-applications.controller');
 const { sendCertificateIssuedEmail, sendTrainerWelcomeEmail } = require('../../libs/email');
 const { invalidateAuthUserCache } = require('../../common/guards');
-const { executeSubmissionReview } = require('../trainer/trainer.controller');
+const {
+  buildTrainerAssignmentsReport,
+  buildTrainerSubmissionWhere,
+  executeSubmissionReview,
+} = require('../trainer/trainer.controller');
 const {
   createNotification,
   createNotificationsForUsers,
@@ -571,10 +575,23 @@ const updateUserStatus = asyncHandler(async (req, res) => {
 
 const listAdminEnrollments = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 10);
-  const { search, status, designationId, from, to } = req.query;
+  const { search, status, enrollmentType, unassigned, designationId, from, to } = req.query;
+
+  const statuses = status
+    ? String(status)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
 
   const where = {
-    ...(status && { status }),
+    ...(statuses.length === 1 && { status: statuses[0] }),
+    ...(statuses.length > 1 && { status: { in: statuses } }),
+    ...(enrollmentType && { enrollmentType: String(enrollmentType) }),
+    ...(unassigned === 'true' && {
+      teamId: null,
+      trainerAssignments: { none: { active: true } },
+    }),
     ...(designationId && { plan: { designationId: String(designationId) } }),
     ...(from || to
       ? {
@@ -602,6 +619,7 @@ const listAdminEnrollments = asyncHandler(async (req, res) => {
         team: true,
         plan: { include: { designation: true, domain: true } },
         payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+        trainerAssignments: { where: { active: true }, take: 1, select: { id: true, trainerId: true } },
         taskProgress: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -617,6 +635,7 @@ const listAdminEnrollments = asyncHandler(async (req, res) => {
       _id: e.id,
       userId: e.userId,
       student: { _id: e.user.id, name: e.user.name, email: e.user.email },
+      enrollmentType: e.enrollmentType,
       teamId: e.teamId || null,
       team: e.team ? { _id: e.team.id, name: e.team.name } : null,
       planId: e.planId,
@@ -629,6 +648,7 @@ const listAdminEnrollments = asyncHandler(async (req, res) => {
         domain: e.plan.domain ? { _id: e.plan.domain.id, name: e.plan.domain.name } : null,
       },
       status: e.status,
+      hasTrainer: (e.trainerAssignments?.length ?? 0) > 0,
       paymentStatus: latestPayment?.status || null,
       priceSnapshot: e.priceSnapshot,
       progress: {
@@ -1165,10 +1185,13 @@ const listAdminAuditLogs = asyncHandler(async (req, res) => {
 
 const listAdminTeams = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query, 20);
-  const { search, status } = req.query;
+  const { search, status, unassigned } = req.query;
 
   const where = {
     ...(status && { status }),
+    ...(unassigned === 'true' && {
+      trainerAssignments: { none: { active: true } },
+    }),
     ...(search && {
       OR: [
         { name: { contains: String(search), mode: 'insensitive' } },
@@ -1294,6 +1317,66 @@ const listTrainerAssignments = asyncHandler(async (req, res) => {
   }));
 
   ok(res, paginatedResponse(rows, total, page, limit));
+});
+
+/**
+ * GET /admin/trainer-assignments/summary
+ * Overall trainer count, assigned tasks, reviewed tasks and pending tasks for the assignments overview.
+ */
+const getTrainerAssignmentsSummary = asyncHandler(async (_req, res) => {
+  const [totalTrainers, activeAssignments] = await Promise.all([
+    prisma.user.count({
+      where: {
+        status: USER_STATUS.ACTIVE,
+        userRoles: { some: { role: { name: ROLES.TRAINER } } },
+      },
+    }),
+    prisma.trainerAssignment.findMany({
+      where: { active: true },
+      select: { trainerId: true, enrollmentId: true, teamId: true },
+    }),
+  ]);
+
+  const assignedTrainers = new Set(activeAssignments.map((a) => a.trainerId).filter(Boolean)).size;
+  const enrollmentIds = [...new Set(activeAssignments.map((a) => a.enrollmentId).filter(Boolean))];
+  const teamIds = [...new Set(activeAssignments.map((a) => a.teamId).filter(Boolean))];
+
+  const progressOr = [];
+  if (enrollmentIds.length > 0) progressOr.push({ enrollmentId: { in: enrollmentIds } });
+  if (teamIds.length > 0) progressOr.push({ teamId: { in: teamIds } });
+
+  const subOr = buildTrainerSubmissionWhere(enrollmentIds, teamIds);
+
+  const [totalTasks, approvedTasks, totalSubmissions, pendingTasks, reviewedTasks] = await Promise.all([
+    progressOr.length > 0
+      ? prisma.taskProgress.count({ where: { OR: progressOr } })
+      : Promise.resolve(0),
+    progressOr.length > 0
+      ? prisma.taskProgress.count({ where: { status: TASK_STATUS.APPROVED, OR: progressOr } })
+      : Promise.resolve(0),
+    subOr.length > 0
+      ? prisma.taskSubmission.count({ where: { OR: subOr } })
+      : Promise.resolve(0),
+    subOr.length > 0
+      ? prisma.taskSubmission.count({ where: { reviewStatus: REVIEW_STATUS.PENDING, OR: subOr } })
+      : Promise.resolve(0),
+    subOr.length > 0
+      ? prisma.taskSubmission.count({
+          where: { reviewStatus: { not: REVIEW_STATUS.PENDING }, OR: subOr },
+        })
+      : Promise.resolve(0),
+  ]);
+
+  ok(res, {
+    totalTrainers,
+    assignedTrainers,
+    activeAssignments: activeAssignments.length,
+    totalTasks,
+    approvedTasks,
+    totalSubmissions,
+    reviewedTasks,
+    pendingTasks,
+  });
 });
 
 /**
@@ -1488,6 +1571,27 @@ const listTrainerAssignmentsForTrainer = asyncHandler(async (req, res) => {
   });
 
   ok(res, { items, total: items.length });
+});
+
+/**
+ * GET /admin/trainers/:id/reports
+ * Full progress report rows (same shape as GET /trainer/assignments) for one trainer.
+ */
+const getAdminTrainerReports = asyncHandler(async (req, res) => {
+  const trainerId = req.params.id;
+  const trainer = await prisma.user.findUnique({
+    where: { id: trainerId },
+    select: { id: true, name: true, email: true },
+  });
+  if (!trainer) throw ApiError.notFound('Trainer');
+
+  const search = req.query.search ? String(req.query.search).trim() : null;
+  const filtered = await buildTrainerAssignmentsReport(trainer.id, search);
+
+  ok(res, {
+    ...paginatedResponse(filtered, filtered.length, 1, filtered.length || 10),
+    trainer: { _id: trainer.id, name: trainer.name, email: trainer.email },
+  });
 });
 
 /**
@@ -2289,9 +2393,11 @@ module.exports = {
   listAdminAuditLogs,
   listAdminTeams,
   listTrainerAssignments,
+  getTrainerAssignmentsSummary,
   createTrainerAssignment,
   deleteTrainerAssignment,
   listTrainerAssignmentsForTrainer,
+  getAdminTrainerReports,
   assignToTrainer,
   removeTrainerAssignmentForTrainer,
   updateStudentTrainer,
