@@ -4,6 +4,7 @@ const adminCatalogController = require('./admin-catalog.controller');
 const adminProjectsController = require('./admin-projects.controller');
 const adminQuestionsController = require('./admin-questions.controller');
 const adminTpoController = require('./admin-tpo.controller');
+const adminChangeRequestsController = require('./admin-change-requests.controller');
 const internshipsController = require('../internships/internships.controller');
 const { validateInternshipPayload } = require('../internships/internships.validator');
 const trainerApplicationsController = require('../trainer-applications/trainer-applications.controller');
@@ -133,6 +134,10 @@ router.post(
   trainerApplicationsController.acceptTrainerApplication,
 );
 router.delete('/trainer-applications/:id', trainerApplicationsController.deleteTrainerApplication);
+
+// ─── Trainer Change Requests (student-submitted, admin resolves) ──────────────
+router.get('/trainer-change-requests', adminChangeRequestsController.listTrainerChangeRequests);
+router.patch('/trainer-change-requests/:id', adminChangeRequestsController.resolveTrainerChangeRequest);
 
 // ─── TPOs (Referral Codes & Student Attribution) ─────────────────────────────
 router.get('/tpos', adminTpoController.listAdminTpos);

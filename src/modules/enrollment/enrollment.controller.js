@@ -28,6 +28,72 @@ const logger = require('../../libs/logger');
 
 const QUOTE_TTL_HOURS = 24;
 
+// ─── Student: Submit a Change Trainer Request ────────────────────────────────
+
+const submitChangeTrainerRequest = asyncHandler(async (req, res) => {
+  const studentId = req.user.id;
+  const { enrollmentId, reason, mobile } = req.body;
+
+  if (!enrollmentId) {
+    throw ApiError.validationError([
+      { field: 'enrollmentId', message: 'Enrollment ID is required.' },
+    ]);
+  }
+
+  const trimmedReason = String(reason || '').trim();
+  if (!trimmedReason || trimmedReason.length < 10) {
+    throw ApiError.validationError([
+      { field: 'reason', message: 'Please provide a reason (at least 10 characters).' },
+    ]);
+  }
+
+  // Verify enrollment belongs to this student
+  const enrollment = await prisma.enrollment.findFirst({
+    where: { id: enrollmentId, userId: studentId },
+    include: {
+      trainerAssignments: {
+        where: { active: true },
+        take: 1,
+      },
+    },
+  });
+
+  if (!enrollment) {
+    throw ApiError.notFound('Enrollment not found or does not belong to you.');
+  }
+
+  // Check for existing pending request
+  const existing = await prisma.trainerChangeRequest.findFirst({
+    where: { studentId, enrollmentId, status: 'PENDING' },
+  });
+
+  if (existing) {
+    throw ApiError.conflict(
+      'DUPLICATE_REQUEST',
+      'You already have a pending trainer change request for this enrollment.',
+    );
+  }
+
+  const currentTrainerId = enrollment.trainerAssignments?.[0]?.trainerId || null;
+
+  const changeRequest = await prisma.trainerChangeRequest.create({
+    data: {
+      studentId,
+      enrollmentId,
+      currentTrainerId,
+      reason: trimmedReason,
+      mobile: mobile ? String(mobile).trim() : null,
+      status: 'PENDING',
+    },
+  });
+
+  ok(res, {
+    _id: changeRequest.id,
+    status: changeRequest.status,
+    message: 'Your request to change trainer has been submitted successfully.',
+  });
+});
+
 function planRef(plan) {
   if (!plan) return null;
   return {
@@ -1148,4 +1214,5 @@ module.exports = {
   completeDemoCheckout,
   handlePaymentWebhook,
   activateEnrollmentEngine,
+  submitChangeTrainerRequest,
 };
