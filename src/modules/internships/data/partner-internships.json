@@ -111,7 +111,30 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "Banking": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "Finance": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       },
       {
         "id": "inlarge-fintech-app",
@@ -199,7 +222,30 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "Banking": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "Finance": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       }
     ]
   },
@@ -315,7 +361,30 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "Telecom": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "E-commerce": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       },
       {
         "id": "couldinger-mobile-app",
@@ -403,7 +472,30 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "Telecom": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "E-commerce": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       }
     ]
   },
@@ -519,7 +611,30 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "Healthcare": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "Insurance": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       },
       {
         "id": "proton-healthcare-app",
@@ -607,7 +722,30 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "Healthcare": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "Insurance": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       }
     ]
   },
@@ -723,7 +861,30 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "ERP/CRM": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "Loan": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       },
       {
         "id": "ady-nexes-mobile-app",
@@ -811,7 +972,160 @@
           "Dedicated 1-on-1 Industry Mentor",
           "Placement Support & Interview Drives"
         ],
-        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals."
+        "eligibility": "B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "ERP/CRM": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            },
+            "Loan": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "logo-corp",
+    "name": "Logo Corp",
+    "slug": "logo-corp",
+    "domain": "Banking Domain",
+    "domainSlug": "banking",
+    "domainCategory": "banking",
+    "assignedDomains": [
+      "Banking"
+    ],
+    "assignedDomainSlugs": [
+      "banking"
+    ],
+    "tagline": "Logo Corp engineering internship program",
+    "location": "100% Online Remote",
+    "rating": "4.9",
+    "hiringBatch": "Batch 2026 / 2027",
+    "gradient": "from-blue-600 via-indigo-600 to-sky-600",
+    "accentBorder": "border-blue-500/30 hover:border-blue-500",
+    "badgeTint": "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+    "logoBg": "bg-blue-600",
+    "logoInitials": "LC",
+    "stats": {
+      "teamSize": "100+ Engineers",
+      "placementAssistance": "Placement Support",
+      "mentors": "Senior Technical Architects"
+    },
+    "roles": [
+      {
+        "id": "logo-corp-web-1795713945921",
+        "track": "web",
+        "trackLabel": "Web Development",
+        "designation": "Trainee Software Engineer – Web Development",
+        "role": "Trainee Software Engineer",
+        "fullRoleName": "Trainee Software Engineer – Web Development – Banking",
+        "trackType": "Full Stack Web Engineering Track",
+        "domains": [
+          "Banking"
+        ],
+        "level": "Undergraduate / Graduate",
+        "duration": "1 to 6 Months",
+        "durationsList": [
+          "1 month",
+          "2 months",
+          "3 months",
+          "4 months",
+          "5 months",
+          "6 months"
+        ],
+        "workMode": "100% Online Remote",
+        "applicantsCount": 120,
+        "description": "As a Trainee Software Engineer – Web Development Intern at Logo Corp, candidates will work on designing, developing, testing, and maintaining production applications across the Banking domains.",
+        "rolesAndResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "baseResponsibilities": [
+          "Develop responsive and user-friendly web applications using modern frontend technologies.",
+          "Design and implement interactive user interfaces using HTML, CSS, JavaScript, and modern frameworks.",
+          "Develop backend functionality, business logic, and RESTful APIs.",
+          "Work with databases to store, retrieve, update, and manage application data.",
+          "Implement user authentication, authorization, and role-based access control.",
+          "Integrate frontend applications with backend services and third-party APIs.",
+          "Develop and maintain modules such as user management, dashboards, reports, payment workflows, and administrative panels.",
+          "Perform application testing, debugging, and troubleshooting.",
+          "Collaborate with team members to understand project requirements and implement solutions.",
+          "Maintain technical documentation and follow software development best practices.",
+          "Participate in project reviews, code reviews, and development activities.",
+          "Work on domain-specific business requirements and implement real-world software solutions."
+        ],
+        "keyDeliverables": [
+          "Develop responsive, scalable application modules across Banking.",
+          "Implement authentication, state management, and modern API endpoints.",
+          "Collaborate on git version control, code reviews, and production testing."
+        ],
+        "techStack": [
+          "HTML5",
+          "CSS3",
+          "JavaScript",
+          "React.js",
+          "Node.js",
+          "REST APIs",
+          "Git"
+        ],
+        "skillsRequired": [
+          "HTML5, CSS3, and JavaScript.",
+          "React.js / Angular / Vue.js (any one preferred).",
+          "Core Java / Python / Node.js / PHP (any one preferred).",
+          "SQL and database concepts (MySQL / PostgreSQL / MongoDB).",
+          "REST API development and integration.",
+          "Git and GitHub for version control.",
+          "Responsive web design and UI/UX fundamentals.",
+          "Basic knowledge of authentication and authorization."
+        ],
+        "perks": [
+          "Official Internship Completion Letter",
+          "Dedicated 1-on-1 Industry Mentor",
+          "Placement Support & Interview Drives"
+        ],
+        "eligibility": "B.Tech / B.E / BCA / MCA with core programming and web fundamentals.",
+        "pricing": {
+          "concessionPercent": 0,
+          "defaultPrices": {
+            "1": 999,
+            "2": 1499,
+            "3": 1999,
+            "6": 2999
+          },
+          "domainPrices": {
+            "Banking": {
+              "1": 999,
+              "2": 1499,
+              "3": 1999,
+              "6": 2999
+            }
+          }
+        }
       }
     ]
   }

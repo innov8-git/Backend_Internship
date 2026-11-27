@@ -5,6 +5,9 @@ const {
   BASE_WEB_SKILLS,
   BASE_APP_SKILLS,
   COLOR_THEMES,
+  PRICING_DURATIONS,
+  DEFAULT_DURATION_PRICES,
+  DEFAULT_CONCESSION_PERCENT,
 } = require('../constants');
 const { addAudit } = require('../../audit-log/audit-log.service');
 const { ApiError } = require('../../../utils');
@@ -16,6 +19,108 @@ function slugify(text) {
     .replace(/[^\w\s-]/g, '')
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function parseDurationMonths(value) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.round(value);
+  }
+  const matched = String(value || '').match(/\d+/);
+  return matched ? parseInt(matched[0], 10) : 3;
+}
+
+function normalizeDurationMap(rawMap = {}, fallbackMap = DEFAULT_DURATION_PRICES) {
+  const result = {};
+  PRICING_DURATIONS.forEach((m) => {
+    const key = String(m);
+    const val = rawMap?.[key] ?? rawMap?.[m];
+    const parsed = Number(val);
+    result[key] = Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : fallbackMap[m] ?? 1999;
+  });
+  return result;
+}
+
+function normalizePricing(rawPricing = {}, domains = []) {
+  const rawConcession = Number(rawPricing?.concessionPercent);
+  const concessionPercent = Number.isFinite(rawConcession)
+    ? Math.min(100, Math.max(0, Math.round(rawConcession)))
+    : DEFAULT_CONCESSION_PERCENT;
+
+  const defaultPrices = normalizeDurationMap(rawPricing?.defaultPrices, DEFAULT_DURATION_PRICES);
+  const domainPrices = {};
+  const incomingDomains = rawPricing?.domainPrices && typeof rawPricing.domainPrices === 'object'
+    ? rawPricing.domainPrices
+    : {};
+
+  // Keep any explicitly provided domain pricing entries
+  Object.entries(incomingDomains).forEach(([domKey, map]) => {
+    const clean = String(domKey || '').trim();
+    if (clean && map && typeof map === 'object') {
+      domainPrices[clean] = normalizeDurationMap(map, defaultPrices);
+    }
+  });
+
+  // Ensure every assigned domain has an initialized entry
+  (Array.isArray(domains) ? domains : []).forEach((dom) => {
+    const clean = String(dom || '').trim();
+    if (clean && !domainPrices[clean]) {
+      domainPrices[clean] = { ...defaultPrices };
+    }
+  });
+
+  return {
+    concessionPercent,
+    defaultPrices,
+    domainPrices,
+  };
+}
+
+function findDomainPriceMap(domainPrices, domainName) {
+  if (!domainPrices || typeof domainPrices !== 'object' || !domainName) return null;
+  const target = String(domainName).trim().toLowerCase();
+  const matchedKey = Object.keys(domainPrices).find(
+    (k) => k.trim().toLowerCase() === target,
+  );
+  return matchedKey ? domainPrices[matchedKey] : null;
+}
+
+function calculateInternshipPrice({ role, partner, domainName, durationMonths }) {
+  const dur = parseDurationMonths(durationMonths);
+  const durKey = String(dur);
+
+  const rolePricing = role?.pricing;
+  const partnerPricing = partner?.pricing;
+
+  const roleDomainMap = findDomainPriceMap(rolePricing?.domainPrices, domainName);
+  const partnerDomainMap = findDomainPriceMap(partnerPricing?.domainPrices, domainName);
+
+  const rawBase =
+    roleDomainMap?.[durKey] ??
+    partnerDomainMap?.[durKey] ??
+    rolePricing?.defaultPrices?.[durKey] ??
+    partnerPricing?.defaultPrices?.[durKey] ??
+    DEFAULT_DURATION_PRICES[dur] ??
+    1999;
+
+  const basePrice = Math.max(0, Math.round(Number(rawBase) || 0));
+  const rawConcession =
+    rolePricing?.concessionPercent ??
+    partnerPricing?.concessionPercent ??
+    DEFAULT_CONCESSION_PERCENT;
+  const concessionPercent = Math.min(100, Math.max(0, Math.round(Number(rawConcession) || 0)));
+  const discountAmount = Math.round(basePrice * (concessionPercent / 100));
+  const payableAmount = Math.max(0, basePrice - discountAmount);
+
+  return {
+    durationMonths: dur,
+    domainName: domainName || partner?.assignedDomains?.[0] || partner?.domain || '',
+    basePrice,
+    concessionPercent,
+    discountAmount,
+    payableAmount,
+    payablePaise: payableAmount * 100,
+    currency: 'INR',
+  };
 }
 
 class InternshipsService {
@@ -166,6 +271,8 @@ class InternshipsService {
 
     const roleId = originalRoleId || formData.id || `${companySlug}-${track}-${Date.now()}`;
 
+    const normalizedPricing = normalizePricing(formData.pricing, assignedDomains);
+
     const assembledRole = {
       id: roleId,
       track,
@@ -203,6 +310,7 @@ class InternshipsService {
         (isWeb
           ? 'B.Tech / B.E / BCA / MCA with core programming and web fundamentals.'
           : 'B.Tech / B.E / BCA / MCA with mobile development or OOP fundamentals.'),
+      pricing: normalizedPricing,
     };
 
     let targetCompanyIndex = -1;
@@ -228,6 +336,14 @@ class InternshipsService {
       company.assignedDomainSlugs = assignedDomains.map(slugify);
       if (formData.tagline) company.tagline = formData.tagline;
       if (formData.logoInitials) company.logoInitials = formData.logoInitials;
+      if (formData.logoUrl !== undefined) {
+        const trimmedLogoUrl = typeof formData.logoUrl === 'string' ? formData.logoUrl.trim() : '';
+        if (trimmedLogoUrl) {
+          company.logoUrl = trimmedLogoUrl;
+        } else {
+          delete company.logoUrl;
+        }
+      }
       if (theme.logoBg) company.logoBg = theme.logoBg;
       if (theme.gradient) company.gradient = theme.gradient;
       if (theme.accentBorder) company.accentBorder = theme.accentBorder;
@@ -261,6 +377,9 @@ class InternshipsService {
         accentBorder: theme.accentBorder,
         badgeTint: theme.badgeTint,
         logoBg: theme.logoBg,
+        ...(typeof formData.logoUrl === 'string' && formData.logoUrl.trim()
+          ? { logoUrl: formData.logoUrl.trim() }
+          : {}),
         logoInitials:
           formData.logoInitials ||
           companyName
@@ -339,6 +458,38 @@ class InternshipsService {
   }
 
   /**
+   * Resolve pricing breakdown for a given internship/company + domain + duration.
+   */
+  static getQuote({ internshipId, companyName, domainName, durationMonths } = {}) {
+    const companies = InternshipsModel.getCompanies();
+    let matchedPartner = null;
+    let matchedRole = null;
+
+    if (internshipId) {
+      const pos = InternshipsModel.findPositionById(internshipId);
+      if (pos) {
+        matchedPartner = pos.partner;
+        matchedRole = pos.role;
+      }
+    }
+
+    if (!matchedPartner && companyName) {
+      const target = String(companyName).trim().toLowerCase();
+      matchedPartner = companies.find(
+        (c) => c.name?.toLowerCase() === target || c.slug?.toLowerCase() === target,
+      ) || null;
+      matchedRole = matchedPartner?.roles?.[0] || null;
+    }
+
+    return calculateInternshipPrice({
+      role: matchedRole,
+      partner: matchedPartner,
+      domainName,
+      durationMonths,
+    });
+  }
+
+  /**
    * Reset all partner internships to default 4 companies and 8 positions.
    */
   static async resetToDefaults({ actorId, ip } = {}) {
@@ -359,4 +510,4 @@ class InternshipsService {
   }
 }
 
-module.exports = { InternshipsService };
+module.exports = { InternshipsService, calculateInternshipPrice, normalizePricing };

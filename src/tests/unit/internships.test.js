@@ -94,4 +94,70 @@ describe('InternshipsService (SOLID & DRY)', () => {
     const afterReset = InternshipsService.listPositions();
     expect(afterReset.stats.totalPositions).toBe(8);
   });
+
+  it('should resolve dynamic pricing by company, domain, and duration (1, 2, 3, 6)', async () => {
+    await InternshipsService.savePosition(
+      {
+        companyName: 'Inlarge Software',
+        track: 'web',
+        role: 'Trainee Software Engineer',
+        assignedDomains: ['Banking', 'Finance'],
+        pricing: {
+          concessionPercent: 20,
+          defaultPrices: { 1: 1000, 2: 1500, 3: 2000, 6: 3500 },
+          domainPrices: {
+            Banking: { 1: 1200, 2: 1800, 3: 2500, 6: 4000 },
+            Finance: { 1: 1500, 2: 2000, 3: 3000, 6: 5000 },
+          },
+        },
+      },
+      'inlarge-fintech-eng',
+    );
+
+    const banking3m = InternshipsService.getQuote({
+      internshipId: 'inlarge-fintech-eng',
+      domainName: 'Banking',
+      durationMonths: 3,
+    });
+    expect(banking3m.basePrice).toBe(2500);
+    expect(banking3m.concessionPercent).toBe(20);
+    expect(banking3m.discountAmount).toBe(500);
+    expect(banking3m.payableAmount).toBe(2000);
+    expect(banking3m.payablePaise).toBe(200000);
+
+    const finance6m = InternshipsService.getQuote({
+      internshipId: 'inlarge-fintech-eng',
+      domainName: 'Finance',
+      durationMonths: '6 Months',
+    });
+    expect(finance6m.basePrice).toBe(5000);
+    expect(finance6m.discountAmount).toBe(1000);
+    expect(finance6m.payableAmount).toBe(4000);
+    expect(finance6m.payablePaise).toBe(400000);
+  });
+
+  it('should persist and clear company logoUrl when creating or updating a position', async () => {
+    const created = await InternshipsService.savePosition({
+      companyName: 'Logo Corp',
+      logoUrl: '/uploads/logo-corp.png',
+      track: 'web',
+      role: 'Trainee Software Engineer',
+      assignedDomains: ['Banking'],
+    });
+    const fetchedCreated = InternshipsService.getPositionById(created.role.id);
+    expect(fetchedCreated.partner.logoUrl).toBe('/uploads/logo-corp.png');
+
+    await InternshipsService.savePosition(
+      {
+        companyName: 'Logo Corp',
+        logoUrl: '',
+        track: 'web',
+        role: 'Trainee Software Engineer',
+        assignedDomains: ['Banking'],
+      },
+      created.role.id,
+    );
+    const fetchedUpdated = InternshipsService.getPositionById(created.role.id);
+    expect(fetchedUpdated.partner.logoUrl).toBeUndefined();
+  });
 });
