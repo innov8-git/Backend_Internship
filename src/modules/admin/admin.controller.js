@@ -94,6 +94,33 @@ function userDto(user) {
     }
   }
 
+  let teamSummary = null;
+  if (user.teamMemberships !== undefined || user.teamsLed !== undefined) {
+    const teamMap = new Map();
+    for (const tm of user.teamMemberships || []) {
+      if (tm.team && tm.team.status !== TEAM_STATUS.DISBANDED) {
+        teamMap.set(tm.team.id, {
+          _id: tm.team.id,
+          name: tm.team.name,
+          isLeader: Boolean(tm.isLeader),
+          status: tm.status,
+        });
+      }
+    }
+    for (const t of user.teamsLed || []) {
+      if (t.status !== TEAM_STATUS.DISBANDED) {
+        const existing = teamMap.get(t.id);
+        teamMap.set(t.id, {
+          _id: t.id,
+          name: t.name,
+          isLeader: true,
+          status: existing?.status || 'JOINED',
+        });
+      }
+    }
+    teamSummary = Array.from(teamMap.values());
+  }
+
   return {
     _id: user.id,
     name: user.name,
@@ -114,6 +141,11 @@ function userDto(user) {
         ? { referralCodeUsed: user.referralCodeUsed }
         : {}),
     ...(assignedTrainer !== null && { assignedTrainer }),
+    ...(teamSummary !== null && {
+      teams: teamSummary,
+      isTeamMember: teamSummary.length > 0,
+      isTeamLeader: teamSummary.some((t) => t.isLeader),
+    }),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -382,6 +414,17 @@ const listUsers = asyncHandler(async (req, res) => {
             role: true,
           },
         },
+        teamsLed: {
+          select: { id: true, name: true, status: true },
+        },
+        teamMemberships: {
+          where: { status: { in: ['JOINED', 'INVITED'] } },
+          select: {
+            isLeader: true,
+            status: true,
+            team: { select: { id: true, name: true, status: true } },
+          },
+        },
         enrollments: {
           include: {
             team: {
@@ -565,6 +608,257 @@ const updateUserStatus = asyncHandler(async (req, res) => {
   });
 
   ok(res, userDto(updated));
+});
+
+/**
+ * DELETE /api/v1/admin/users/:id
+ * Permanently deletes a user and all dependent records from the database.
+ */
+const deleteUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (id === req.user.id) {
+    throw ApiError.forbidden('CANNOT_DELETE_SELF', 'You cannot delete your own account.');
+  }
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      userRoles: { include: { role: true } },
+      trainerProfile: true,
+      tpoProfile: { select: { id: true } },
+    },
+  });
+
+  if (!targetUser) {
+    throw ApiError.notFound('User not found.');
+  }
+
+  const roleNames = (targetUser.userRoles || []).map((ur) => ur.role?.name).filter(Boolean);
+  if (roleNames.includes(ROLES.ADMIN)) {
+    const adminCount = await prisma.user.count({
+      where: {
+        userRoles: { some: { role: { name: ROLES.ADMIN } } },
+      },
+    });
+    if (adminCount <= 1) {
+      throw ApiError.badRequest(
+        'LAST_ADMIN',
+        'Cannot delete the only remaining administrator account.',
+      );
+    }
+  }
+
+  const resumeKeyToDelete = targetUser.trainerProfile?.resumeKey || null;
+  const beforeSnapshot = {
+    name: targetUser.name,
+    email: targetUser.email,
+    roles: roleNames,
+    status: targetUser.status,
+  };
+
+  let wasTeamMember = false;
+
+  await prisma.$transaction(async (tx) => {
+    const [enrollments, ledTeams, membershipCount] = await Promise.all([
+      tx.enrollment.findMany({ where: { userId: id }, select: { id: true } }),
+      tx.team.findMany({
+        where: { leaderId: id },
+        include: {
+          members: {
+            where: { status: 'JOINED', userId: { not: null } },
+            orderBy: { joinedAt: 'asc' },
+          },
+        },
+      }),
+      tx.teamMember.count({ where: { userId: id } }),
+    ]);
+
+    const enrollmentIds = enrollments.map((e) => e.id);
+    wasTeamMember = ledTeams.length > 0 || membershipCount > 0;
+
+    const leadershipTransfers = [];
+    const teamsToDeleteIds = [];
+    for (const team of ledTeams) {
+      const nextLeader = (team.members || []).find((m) => m.userId && m.userId !== id);
+      if (nextLeader) {
+        leadershipTransfers.push({ teamId: team.id, memberId: nextLeader.id, userId: nextLeader.userId });
+      } else {
+        teamsToDeleteIds.push(team.id);
+      }
+    }
+
+    const paymentWhereOr = [{ userId: id }];
+    if (enrollmentIds.length > 0) paymentWhereOr.push({ enrollmentId: { in: enrollmentIds } });
+    const payments = await tx.payment.findMany({
+      where: { OR: paymentWhereOr },
+      select: { id: true },
+    });
+    const paymentIds = payments.map((p) => p.id);
+
+    const taskProgressRecords = enrollmentIds.length > 0
+      ? await tx.taskProgress.findMany({
+          where: { enrollmentId: { in: enrollmentIds } },
+          select: { id: true },
+        })
+      : [];
+    const taskProgressIds = taskProgressRecords.map((tp) => tp.id);
+
+    const submissionWhereOr = [{ submittedById: id }];
+    if (taskProgressIds.length > 0) submissionWhereOr.push({ taskProgressId: { in: taskProgressIds } });
+    const submissions = await tx.taskSubmission.findMany({
+      where: { OR: submissionWhereOr },
+      select: { id: true },
+    });
+    const submissionIds = submissions.map((s) => s.id);
+
+    // Clean up extra live-DB table (trainer_change_requests) if present
+    if (typeof tx.$queryRawUnsafe === 'function' && typeof tx.$executeRawUnsafe === 'function') {
+      const tableCheck = await tx.$queryRawUnsafe(
+        `SELECT to_regclass('public.trainer_change_requests')::text AS tbl`,
+      );
+      if (Array.isArray(tableCheck) && tableCheck[0]?.tbl) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "trainer_change_requests" SET "resolvedById" = NULL WHERE "resolvedById" = $1`,
+          id,
+        );
+        if (enrollmentIds.length > 0) {
+          await tx.$executeRawUnsafe(
+            `DELETE FROM "trainer_change_requests" WHERE "studentId" = $1 OR "enrollmentId" = ANY($2::text[])`,
+            id,
+            enrollmentIds,
+          );
+        } else {
+          await tx.$executeRawUnsafe(
+            `DELETE FROM "trainer_change_requests" WHERE "studentId" = $1`,
+            id,
+          );
+        }
+      }
+    }
+
+    // 1. Reviews & Task Submissions & Task Progress
+    const reviewWhereOr = [{ trainerId: id }];
+    if (submissionIds.length > 0) reviewWhereOr.push({ submissionId: { in: submissionIds } });
+    await tx.review.deleteMany({ where: { OR: reviewWhereOr } });
+
+    await tx.taskSubmission.deleteMany({ where: { OR: submissionWhereOr } });
+
+    if (enrollmentIds.length > 0) {
+      await tx.taskProgress.deleteMany({ where: { enrollmentId: { in: enrollmentIds } } });
+    }
+    if (teamsToDeleteIds.length > 0) {
+      await tx.taskProgress.updateMany({
+        where: { teamId: { in: teamsToDeleteIds } },
+        data: { teamId: null },
+      });
+    }
+
+    // 2. SOP Access Logs & Trainer Assignments
+    const sopWhereOr = [{ userId: id }];
+    if (enrollmentIds.length > 0) sopWhereOr.push({ enrollmentId: { in: enrollmentIds } });
+    await tx.sopAccessLog.deleteMany({ where: { OR: sopWhereOr } });
+
+    const assignmentWhereOr = [{ trainerId: id }];
+    if (enrollmentIds.length > 0) assignmentWhereOr.push({ enrollmentId: { in: enrollmentIds } });
+    if (teamsToDeleteIds.length > 0) assignmentWhereOr.push({ teamId: { in: teamsToDeleteIds } });
+    await tx.trainerAssignment.deleteMany({ where: { OR: assignmentWhereOr } });
+
+    // 3. TPO Earnings, Payment Events, Payments, Certificates, Terms Acceptances
+    const tpoEarningWhereOr = [{ studentId: id }];
+    if (enrollmentIds.length > 0) tpoEarningWhereOr.push({ enrollmentId: { in: enrollmentIds } });
+    if (paymentIds.length > 0) tpoEarningWhereOr.push({ paymentId: { in: paymentIds } });
+    await tx.tpoEarning.deleteMany({ where: { OR: tpoEarningWhereOr } });
+
+    if (paymentIds.length > 0) {
+      await tx.paymentEvent.deleteMany({ where: { paymentId: { in: paymentIds } } });
+    }
+    await tx.payment.deleteMany({ where: { OR: paymentWhereOr } });
+
+    const certWhereOr = [{ userId: id }];
+    if (enrollmentIds.length > 0) certWhereOr.push({ enrollmentId: { in: enrollmentIds } });
+    await tx.certificate.deleteMany({ where: { OR: certWhereOr } });
+
+    const termsWhereOr = [{ userId: id }];
+    if (enrollmentIds.length > 0) termsWhereOr.push({ enrollmentId: { in: enrollmentIds } });
+    await tx.termsAcceptance.deleteMany({ where: { OR: termsWhereOr } });
+
+    // 4. Enrollments & Quotes
+    await tx.enrollment.deleteMany({ where: { userId: id } });
+    if (teamsToDeleteIds.length > 0) {
+      await tx.enrollment.updateMany({
+        where: { teamId: { in: teamsToDeleteIds } },
+        data: { teamId: null },
+      });
+      await tx.quote.updateMany({
+        where: { teamId: { in: teamsToDeleteIds } },
+        data: { teamId: null },
+      });
+    }
+    await tx.quote.deleteMany({ where: { userId: id } });
+
+    // 5. Teams & Team Memberships
+    for (const transfer of leadershipTransfers) {
+      await tx.team.update({
+        where: { id: transfer.teamId },
+        data: { leaderId: transfer.userId },
+      });
+      await tx.teamMember.update({
+        where: { id: transfer.memberId },
+        data: { isLeader: true },
+      });
+    }
+
+    const teamMemberWhereOr = [{ userId: id }];
+    if (teamsToDeleteIds.length > 0) teamMemberWhereOr.push({ teamId: { in: teamsToDeleteIds } });
+    await tx.teamMember.deleteMany({ where: { OR: teamMemberWhereOr } });
+
+    if (teamsToDeleteIds.length > 0) {
+      await tx.team.deleteMany({ where: { id: { in: teamsToDeleteIds } } });
+    }
+
+    // 6. Remaining User-Owned Records & Unlinks
+    await tx.assessmentAttempt.deleteMany({ where: { userId: id } });
+    await tx.githubConnection.deleteMany({ where: { userId: id } });
+    await tx.otpToken.deleteMany({ where: { email: targetUser.email } });
+    if (targetUser.tpoProfile?.id) {
+      await tx.tpo.update({
+        where: { id: targetUser.tpoProfile.id },
+        data: { userId: null, portalEnabled: false },
+      });
+    }
+    await tx.auditLog.deleteMany({ where: { actorId: id } });
+
+    // 7. Finally delete the User record itself (cascades roles, trainerProfile, tokens, notifications)
+    await tx.user.delete({ where: { id } });
+  }, { maxWait: 10000, timeout: 30000 });
+
+  invalidateAuthUserCache(id);
+
+  if (resumeKeyToDelete) {
+    try {
+      const storage = getStorage();
+      await storage.delete(resumeKeyToDelete, 'raw');
+    } catch (err) {
+      logger.warn(`Failed to delete user resume file ${resumeKeyToDelete}: ${err.message}`);
+    }
+  }
+
+  await addAudit({
+    actorId: req.user.id,
+    action: 'USER_DELETED',
+    entityType: 'User',
+    entityId: id,
+    before: beforeSnapshot,
+    after: null,
+    ip: req.ip,
+  });
+
+  ok(
+    res,
+    { _id: id, deleted: true, wasTeamMember },
+    `User ${targetUser.name} was permanently deleted.`,
+  );
 });
 
 // ─── Enrollments Management ──────────────────────────────────────────────────
@@ -2278,6 +2572,7 @@ module.exports = {
   listUsers,
   updateUserRoles,
   updateUserStatus,
+  deleteUser,
   listAdminEnrollments,
   getAdminEnrollmentById,
   listAdminSubmissions,

@@ -20,6 +20,7 @@ enum RoleName {
   STUDENT
   TRAINER
   ADMIN
+  TPO
 }
 
 enum TokenType {
@@ -127,6 +128,23 @@ enum TrainerApplicationStatus {
   APPROVED
 }
 
+enum TpoCommissionType {
+  FIXED
+  PERCENTAGE
+}
+
+enum TpoEarningStatus {
+  CONFIRMED
+  PAID
+  REVERSED
+}
+
+enum TpoPayoutStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -165,7 +183,10 @@ model User {
   updatedAt     DateTime   @updatedAt
 
   referredByTpo      Tpo?                @relation("TpoReferredStudents", fields: [referredByTpoId], references: [id], onDelete: SetNull)
+  tpoProfile         Tpo?                @relation("TpoAccountUser")
   createdTpos        Tpo[]               @relation("TpoCreatedBy")
+  tpoEarnings        TpoEarning[]        @relation("TpoEarningStudent")
+  recordedTpoPayouts TpoPayout[]         @relation("TpoPayoutRecordedBy")
   authTokens         AuthToken[]
   assessmentAttempts AssessmentAttempt[]
   quotes             Quote[]
@@ -463,6 +484,7 @@ model Enrollment {
   trainerAssignments TrainerAssignment[]
   sopAccessLogs      SopAccessLog[]
   certificate        Certificate?      @relation("EnrollmentCertificate")
+  tpoEarning         TpoEarning?
 
   @@index([userId])
   @@index([teamId])
@@ -491,6 +513,7 @@ model Payment {
   enrollment Enrollment     @relation(fields: [enrollmentId], references: [id])
   user       User           @relation(fields: [userId], references: [id])
   events     PaymentEvent[]
+  tpoEarning TpoEarning?
 
   @@index([enrollmentId])
   @@index([userId])
@@ -928,25 +951,86 @@ model Notification {
   @@map("notifications")
 }
 
-// --- TPO (Training & Placement Officer) Referral Codes ----------------------
+// --- TPO (Training & Placement Officer) Referral Codes & Earnings -----------
 
 model Tpo {
-  id           String   @id @default(uuid())
-  name         String
-  college      String
-  email        String
-  phone        String
-  referralCode String   @unique
-  isActive     Boolean  @default(true)
-  createdById  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String            @id @default(uuid())
+  userId          String?           @unique
+  name            String
+  college         String
+  email           String
+  phone           String
+  referralCode    String            @unique
+  isActive        Boolean           @default(true)
+  portalEnabled   Boolean           @default(true)
+  commissionType  TpoCommissionType @default(FIXED)
+  commissionValue Int               @default(0) // FIXED: integer paise; PERCENTAGE: basis points (1000 = 10.00%)
+  createdById     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  createdBy        User?  @relation("TpoCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  referredStudents User[] @relation("TpoReferredStudents")
+  user             User?        @relation("TpoAccountUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdBy        User?        @relation("TpoCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  referredStudents User[]       @relation("TpoReferredStudents")
+  earnings         TpoEarning[]
+  payouts          TpoPayout[]
 
   @@index([isActive])
+  @@index([portalEnabled])
   @@index([email])
   @@index([createdAt])
   @@map("tpos")
+}
+
+model TpoEarning {
+  id                 String            @id @default(uuid())
+  tpoId              String
+  studentId          String
+  enrollmentId       String            @unique
+  paymentId          String            @unique
+  referralCodeUsed   String
+  paymentAmountPaise Int
+  commissionType     TpoCommissionType
+  commissionValue    Int
+  earnedAmountPaise  Int
+  currency           String            @default("INR")
+  status             TpoEarningStatus  @default(CONFIRMED)
+  payoutId           String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  tpo        Tpo        @relation(fields: [tpoId], references: [id], onDelete: Restrict)
+  student    User       @relation("TpoEarningStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  payment    Payment    @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  payout     TpoPayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+
+  @@index([tpoId, status])
+  @@index([tpoId, createdAt])
+  @@index([studentId])
+  @@index([payoutId])
+  @@map("tpo_earnings")
+}
+
+model TpoPayout {
+  id             String          @id @default(uuid())
+  tpoId          String
+  amountPaise    Int
+  currency       String          @default("INR")
+  status         TpoPayoutStatus @default(PAID)
+  paymentMethod  String?
+  transactionRef String?
+  notes          String?         @db.Text
+  recordedById   String?
+  paidAt         DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  tpo        Tpo          @relation(fields: [tpoId], references: [id], onDelete: Restrict)
+  recordedBy User?        @relation("TpoPayoutRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  earnings   TpoEarning[]
+
+  @@index([tpoId, paidAt])
+  @@index([status])
+  @@map("tpo_payouts")
 }

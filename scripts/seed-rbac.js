@@ -39,6 +39,8 @@ const PERMISSIONS = [
   { code: 'assessment:evaluate', name: 'Review Assessments', module: 'assessment', description: 'Review assessment submissions' },
   // RBAC
   { code: 'rbac:manage', name: 'Manage Roles & Permissions', module: 'rbac', description: 'Assign roles and modify permissions' },
+  // TPO private portal
+  { code: 'tpo:portal:read', name: 'View Own TPO Referrals & Earnings', module: 'tpo', description: 'Access private TPO referral count and earnings portal' },
 ];
 
 // ─── Role → Permission mapping ────────────────────────────────────────────────
@@ -56,6 +58,9 @@ const ROLE_PERMISSIONS = {
     'assessment:evaluate',
     'trainer:profile:read', 'trainer:profile:update',
   ],
+  TPO: [
+    'tpo:portal:read',
+  ],
   ADMIN: PERMISSIONS.map((p) => p.code), // Admin gets everything
 };
 
@@ -64,6 +69,7 @@ const ROLE_PERMISSIONS = {
 const ROLES = [
   { name: 'STUDENT', displayName: 'Student',  description: 'Intern / learner enrolled in an internship programme' },
   { name: 'TRAINER', displayName: 'Trainer',  description: 'Domain expert who evaluates and mentors students' },
+  { name: 'TPO',     displayName: 'TPO',      description: 'Training & Placement Officer with private referral portal access' },
   { name: 'ADMIN',   displayName: 'Admin',    description: 'System administrator with full access' },
 ];
 
