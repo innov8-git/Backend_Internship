@@ -422,7 +422,7 @@ describe('Cross-role Student / Trainer / Admin task & review flows', () => {
       );
     });
 
-    test('auto-approves and unlocks dependent task when requiresTrainerReview is false', async () => {
+    test('routes submission to PENDING for trainer review even when legacy task has requiresTrainerReview=false', async () => {
       mockPrisma.user.findUnique.mockResolvedValueOnce(makeAuthUser(STUDENT_ID, 'STUDENT'));
       mockPrisma.enrollment.findUnique.mockResolvedValueOnce({ id: 'enr-1', userId: STUDENT_ID });
       mockPrisma.taskProgress.findUnique.mockResolvedValueOnce({
@@ -456,7 +456,7 @@ describe('Cross-role Student / Trainer / Admin task & review flows', () => {
         submittedById: STUDENT_ID,
         submittedBy: { id: STUDENT_ID, name: 'STUDENT User' },
         attemptNumber: 1,
-        reviewStatus: 'APPROVED',
+        reviewStatus: 'PENDING',
         githubUrl: 'https://github.com/student/project',
         description: validDescription,
         screenshots: [{ url: '/uploads/mock-screenshot.png' }],
@@ -464,19 +464,12 @@ describe('Cross-role Student / Trainer / Admin task & review flows', () => {
       });
       mockPrisma.taskProgress.update.mockResolvedValue({
         id: 'tp-1',
-        status: 'APPROVED',
+        status: 'SUBMITTED',
         attempts: 1,
       });
-      // unlockDependents + checkCertificateEligibility calls
-      mockPrisma.taskProgress.findMany
-        .mockResolvedValueOnce([
-          { id: 'tp-1', taskId: 'td-1', status: 'APPROVED', task: { id: 'td-1', prerequisiteTaskIds: [] } },
-          { id: 'tp-2', taskId: 'td-2', status: 'LOCKED', task: { id: 'td-2', prerequisiteTaskIds: ['td-1'] } },
-        ])
-        .mockResolvedValueOnce([
-          { id: 'tp-1', status: 'APPROVED' },
-          { id: 'tp-2', status: 'AVAILABLE' },
-        ]);
+      mockPrisma.trainerAssignment.findFirst.mockResolvedValueOnce({
+        trainer: { id: TRAINER_ID, name: 'Alex Trainer', email: 'alex@alfre.com' },
+      });
 
       const res = await request(app)
         .post('/api/v1/tasks/tp-1/submissions')
@@ -486,11 +479,21 @@ describe('Cross-role Student / Trainer / Admin task & review flows', () => {
         .attach('screenshots', FAKE_PNG, { filename: 'proof.png', contentType: 'image/png' });
 
       expect(res.status).toBe(201);
-      expect(res.body.data.autoApproved).toBe(true);
+      expect(res.body.data.autoApproved).toBe(false);
+      expect(mockPrisma.taskSubmission.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            reviewStatus: 'PENDING',
+          }),
+        }),
+      );
       expect(mockPrisma.taskProgress.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'tp-2' },
-          data: { status: 'AVAILABLE' },
+          where: { id: 'tp-1' },
+          data: expect.objectContaining({
+            status: 'SUBMITTED',
+            lastReviewStatus: 'PENDING',
+          }),
         }),
       );
     });
