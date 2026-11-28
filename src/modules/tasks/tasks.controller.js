@@ -23,10 +23,6 @@ const {
   createNotification,
   notifyAdmins,
 } = require('../notifications/services/notifications.service');
-const {
-  unlockDependents,
-  checkCertificateEligibility,
-} = require('../trainer/trainer.controller');
 const logger = require('../../libs/logger');
 
 const SUBMISSION_RULES = {
@@ -484,7 +480,6 @@ const submitTask = asyncHandler(async (req, res) => {
   }
 
   const attemptNumber = (progress.attempts || 0) + 1;
-  const requiresReview = progress.task?.requiresTrainerReview !== false;
   const now = new Date();
 
   const [submission] = await prisma.$transaction([
@@ -497,7 +492,7 @@ const submitTask = asyncHandler(async (req, res) => {
         githubUrl,
         screenshots,
         submittedById: req.user.id,
-        reviewStatus: requiresReview ? REVIEW_STATUS.PENDING : REVIEW_STATUS.APPROVED,
+        reviewStatus: REVIEW_STATUS.PENDING,
       },
       include: {
         submittedBy: { select: { id: true, name: true } },
@@ -506,28 +501,15 @@ const submitTask = asyncHandler(async (req, res) => {
     prisma.taskProgress.update({
       where: { id: progress.id },
       data: {
-        status: requiresReview ? TASK_STATUS.SUBMITTED : TASK_STATUS.APPROVED,
+        status: TASK_STATUS.SUBMITTED,
         submittedAt: now,
-        approvedAt: requiresReview ? undefined : now,
         attempts: attemptNumber,
-        lastReviewStatus: requiresReview ? REVIEW_STATUS.PENDING : REVIEW_STATUS.APPROVED,
+        lastReviewStatus: REVIEW_STATUS.PENDING,
       },
     }),
   ]);
 
   await markEnrollmentInProgress(progress, enrollment);
-
-  if (!requiresReview) {
-    // Auto-approved self-check task: unlock dependent tasks and check certificate eligibility
-    await unlockDependents(progress.enrollmentId, progress.teamId);
-    await checkCertificateEligibility(progress.enrollmentId, progress.teamId);
-
-    return created(res, {
-      ...submissionDto(submission),
-      autoApproved: true,
-      assignedTrainer: null,
-    });
-  }
 
   // Notify assigned trainer, or alert admins if no trainer is currently assigned
   const assignedTrainer = await findActiveTrainerForProgress(progress, enrollment);

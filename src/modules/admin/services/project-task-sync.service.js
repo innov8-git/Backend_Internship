@@ -278,7 +278,7 @@ async function ensureProjectScheduleTemplate({
           acceptanceCriteria: task.acceptanceCriteria,
           starterRepoUrl,
           estimatedHours: task.estimatedHours,
-          requiresTrainerReview: task.requiresTrainerReview,
+          requiresTrainerReview: true,
           prerequisiteTaskIds: prereqIds,
         },
       });
@@ -295,7 +295,7 @@ async function ensureProjectScheduleTemplate({
           acceptanceCriteria: task.acceptanceCriteria,
           starterRepoUrl,
           estimatedHours: task.estimatedHours,
-          requiresTrainerReview: task.requiresTrainerReview,
+          requiresTrainerReview: true,
           prerequisiteTaskIds: prereqIds,
           createdBy: actorId || null,
         },
