@@ -66,11 +66,24 @@ const listInternships = asyncHandler(async (req, res) => {
  * Computes pricing breakdown by company/internshipId, domain, and duration (1, 2, 3, 6 months).
  */
 const getInternshipQuote = asyncHandler(async (req, res) => {
-  const { internshipId, companyName, domainName, durationMonths, duration } = req.query;
+  const {
+    internshipId,
+    companyName,
+    domainName,
+    projectId,
+    projectTitle,
+    projectName,
+    projectSlug,
+    durationMonths,
+    duration,
+  } = req.query;
   const quote = InternshipsService.getQuote({
     internshipId,
     companyName,
     domainName,
+    projectId,
+    projectTitle: projectTitle ?? projectName,
+    projectSlug,
     durationMonths: durationMonths ?? duration,
   });
   ok(res, quote);

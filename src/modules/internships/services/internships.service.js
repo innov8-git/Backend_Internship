@@ -68,10 +68,33 @@ function normalizePricing(rawPricing = {}, domains = []) {
     }
   });
 
+  const projectPrices = {};
+  const incomingProjects =
+    rawPricing?.projectPrices && typeof rawPricing.projectPrices === 'object'
+      ? rawPricing.projectPrices
+      : {};
+
+  Object.entries(incomingProjects).forEach(([domKey, projMap]) => {
+    const cleanDom = String(domKey || '').trim();
+    if (!cleanDom || !projMap || typeof projMap !== 'object') return;
+    const fallbackDom = domainPrices[cleanDom] || defaultPrices;
+    const normalizedProjMap = {};
+    Object.entries(projMap).forEach(([projKey, durMap]) => {
+      const cleanProj = String(projKey || '').trim();
+      if (cleanProj && durMap && typeof durMap === 'object') {
+        normalizedProjMap[cleanProj] = normalizeDurationMap(durMap, fallbackDom);
+      }
+    });
+    if (Object.keys(normalizedProjMap).length > 0) {
+      projectPrices[cleanDom] = normalizedProjMap;
+    }
+  });
+
   return {
     concessionPercent,
     defaultPrices,
     domainPrices,
+    projectPrices,
   };
 }
 
@@ -84,17 +107,52 @@ function findDomainPriceMap(domainPrices, domainName) {
   return matchedKey ? domainPrices[matchedKey] : null;
 }
 
-function calculateInternshipPrice({ role, partner, domainName, durationMonths }) {
+function findProjectPriceMap(projectPrices, domainName, projectKeys = []) {
+  if (!projectPrices || typeof projectPrices !== 'object') return null;
+  const candidates = (Array.isArray(projectKeys) ? projectKeys : [projectKeys])
+    .map((k) => String(k || '').trim().toLowerCase())
+    .filter(Boolean);
+  if (candidates.length === 0) return null;
+
+  const domainMaps = domainName
+    ? [findDomainPriceMap(projectPrices, domainName)].filter(Boolean)
+    : Object.values(projectPrices).filter((m) => m && typeof m === 'object');
+
+  for (const projMap of domainMaps) {
+    for (const candidate of candidates) {
+      const matchedKey = Object.keys(projMap).find(
+        (k) => k.trim().toLowerCase() === candidate,
+      );
+      if (matchedKey) return projMap[matchedKey];
+    }
+  }
+  return null;
+}
+
+function calculateInternshipPrice({
+  role,
+  partner,
+  domainName,
+  projectId,
+  projectTitle,
+  projectSlug,
+  durationMonths,
+}) {
   const dur = parseDurationMonths(durationMonths);
   const durKey = String(dur);
+  const projectKeys = [projectId, projectSlug, projectTitle];
 
   const rolePricing = role?.pricing;
   const partnerPricing = partner?.pricing;
 
+  const roleProjectMap = findProjectPriceMap(rolePricing?.projectPrices, domainName, projectKeys);
+  const partnerProjectMap = findProjectPriceMap(partnerPricing?.projectPrices, domainName, projectKeys);
   const roleDomainMap = findDomainPriceMap(rolePricing?.domainPrices, domainName);
   const partnerDomainMap = findDomainPriceMap(partnerPricing?.domainPrices, domainName);
 
   const rawBase =
+    roleProjectMap?.[durKey] ??
+    partnerProjectMap?.[durKey] ??
     roleDomainMap?.[durKey] ??
     partnerDomainMap?.[durKey] ??
     rolePricing?.defaultPrices?.[durKey] ??
@@ -114,6 +172,8 @@ function calculateInternshipPrice({ role, partner, domainName, durationMonths })
   return {
     durationMonths: dur,
     domainName: domainName || partner?.assignedDomains?.[0] || partner?.domain || '',
+    projectId: projectId || null,
+    projectTitle: projectTitle || null,
     basePrice,
     concessionPercent,
     discountAmount,
@@ -460,7 +520,15 @@ class InternshipsService {
   /**
    * Resolve pricing breakdown for a given internship/company + domain + duration.
    */
-  static getQuote({ internshipId, companyName, domainName, durationMonths } = {}) {
+  static getQuote({
+    internshipId,
+    companyName,
+    domainName,
+    projectId,
+    projectTitle,
+    projectSlug,
+    durationMonths,
+  } = {}) {
     const companies = InternshipsModel.getCompanies();
     let matchedPartner = null;
     let matchedRole = null;
@@ -485,6 +553,9 @@ class InternshipsService {
       role: matchedRole,
       partner: matchedPartner,
       domainName,
+      projectId,
+      projectTitle,
+      projectSlug,
       durationMonths,
     });
   }

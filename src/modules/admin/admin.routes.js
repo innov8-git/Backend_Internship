@@ -4,6 +4,7 @@ const adminCatalogController = require('./admin-catalog.controller');
 const adminProjectsController = require('./admin-projects.controller');
 const adminQuestionsController = require('./admin-questions.controller');
 const adminTpoController = require('./admin-tpo.controller');
+const adminChangeRequestsController = require('./admin-change-requests.controller');
 const internshipsController = require('../internships/internships.controller');
 const { validateInternshipPayload } = require('../internships/internships.validator');
 const trainerApplicationsController = require('../trainer-applications/trainer-applications.controller');
@@ -85,6 +86,10 @@ router.patch('/users/:id/trainer', adminController.updateStudentTrainer);
 router.delete('/users/:id', adminController.deleteUser);
 
 
+// ─── Enrollments Monitoring ──────────────────────────────────────────────────
+router.get('/enrollments', adminController.listAdminEnrollments);
+router.get('/enrollments/:id', adminController.getAdminEnrollmentById);
+
 // ─── Submissions & Escalations Oversight ─────────────────────────────────────
 router.get('/submissions', adminController.listAdminSubmissions);
 router.post('/submissions/:id/review', adminController.reviewAdminSubmission);
@@ -108,6 +113,7 @@ router.get('/teams', adminController.listAdminTeams);
 
 // ─── Trainer Assignments ─────────────────────────────────────────────────────
 router.get('/trainer-assignments', adminController.listTrainerAssignments);
+router.get('/trainer-assignments/summary', adminController.getTrainerAssignmentsSummary);
 router.post('/trainer-assignments', adminController.createTrainerAssignment);
 router.delete('/trainer-assignments/:id', adminController.deleteTrainerAssignment);
 
@@ -118,6 +124,7 @@ router.get('/trainers/:id/resume', adminController.getTrainerResume);
 router.patch('/trainers/:id', validate(updateTrainerPrivilegeSchema), adminController.updateTrainerStatus);
 router.delete('/trainers/:id', adminController.deleteTrainer);
 router.get('/trainers/:id/assignments', adminController.listTrainerAssignmentsForTrainer);
+router.get('/trainers/:id/reports', adminController.getAdminTrainerReports);
 router.post('/trainers/:id/assignments', adminController.assignToTrainer);
 router.delete('/trainers/:trainerId/assignments/:assignmentId', adminController.removeTrainerAssignmentForTrainer);
 
@@ -130,6 +137,10 @@ router.post(
   trainerApplicationsController.acceptTrainerApplication,
 );
 router.delete('/trainer-applications/:id', trainerApplicationsController.deleteTrainerApplication);
+
+// ─── Trainer Change Requests (student-submitted, admin resolves) ──────────────
+router.get('/trainer-change-requests', adminChangeRequestsController.listTrainerChangeRequests);
+router.patch('/trainer-change-requests/:id', adminChangeRequestsController.resolveTrainerChangeRequest);
 
 // ─── TPOs (Referral Codes, Earnings, Payouts & Private Portal Access) ────────
 router.get('/tpos', adminTpoController.listAdminTpos);

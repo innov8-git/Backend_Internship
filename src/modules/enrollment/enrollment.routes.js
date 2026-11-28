@@ -21,4 +21,7 @@ router.post('/payments/mock/complete', authenticate, enrollmentController.comple
 router.post('/payments/demo-checkout', optionalAuth, enrollmentController.completeDemoCheckout);
 router.post('/payments/webhooks/:provider', enrollmentController.handlePaymentWebhook);
 
+// Student change-trainer request
+router.post('/enrollments/change-trainer-request', authenticate, authorize(ROLES.STUDENT), enrollmentController.submitChangeTrainerRequest);
+
 module.exports = router;

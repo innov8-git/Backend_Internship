@@ -160,4 +160,48 @@ describe('InternshipsService (SOLID & DRY)', () => {
     const fetchedUpdated = InternshipsService.getPositionById(created.role.id);
     expect(fetchedUpdated.partner.logoUrl).toBeUndefined();
   });
+
+  it('should resolve project-wise duration pricing within a domain and fall back to domain pricing', async () => {
+    await InternshipsService.savePosition(
+      {
+        companyName: 'Inlarge Software',
+        track: 'web',
+        role: 'Trainee Software Engineer',
+        assignedDomains: ['Banking'],
+        pricing: {
+          concessionPercent: 10,
+          defaultPrices: { 1: 999, 2: 1499, 3: 1999, 6: 2999 },
+          domainPrices: {
+            Banking: { 1: 1000, 2: 1500, 3: 2000, 6: 3000 },
+          },
+          projectPrices: {
+            Banking: {
+              'proj-apexpay': { 1: 1200, 2: 1800, 3: 2500, 6: 4000 },
+            },
+          },
+        },
+      },
+      'inlarge-fintech-eng',
+    );
+
+    const customProjQuote = InternshipsService.getQuote({
+      internshipId: 'inlarge-fintech-eng',
+      domainName: 'Banking',
+      projectId: 'proj-apexpay',
+      durationMonths: 3,
+    });
+    expect(customProjQuote.basePrice).toBe(2500);
+    expect(customProjQuote.discountAmount).toBe(250);
+    expect(customProjQuote.payableAmount).toBe(2250);
+
+    const fallbackProjQuote = InternshipsService.getQuote({
+      internshipId: 'inlarge-fintech-eng',
+      domainName: 'Banking',
+      projectId: 'proj-other',
+      durationMonths: 3,
+    });
+    expect(fallbackProjQuote.basePrice).toBe(2000);
+    expect(fallbackProjQuote.discountAmount).toBe(200);
+    expect(fallbackProjQuote.payableAmount).toBe(1800);
+  });
 });

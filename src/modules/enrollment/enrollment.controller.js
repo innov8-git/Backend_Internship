@@ -22,12 +22,79 @@ const {
 const { sendPaymentSuccessEmail } = require('../../libs/email');
 const { computeTeamReadiness } = require('../teams/teams.controller');
 const { notifyAdmins } = require('../notifications/services/notifications.service');
+const { syncProjectTasksToEnrollment } = require('../admin/services/project-task-sync.service');
 const { normalizeReferralCode } = require('../admin/services/tpo-code.util');
 const { recordTpoEarningForPayment } = require('../tpo/services/tpo-earnings.service');
 const { InternshipsService } = require('../internships/services/internships.service');
 const logger = require('../../libs/logger');
 
 const QUOTE_TTL_HOURS = 24;
+
+// ─── Student: Submit a Change Trainer Request ────────────────────────────────
+
+const submitChangeTrainerRequest = asyncHandler(async (req, res) => {
+  const studentId = req.user.id;
+  const { enrollmentId, reason, mobile } = req.body;
+
+  if (!enrollmentId) {
+    throw ApiError.validationError([
+      { field: 'enrollmentId', message: 'Enrollment ID is required.' },
+    ]);
+  }
+
+  const trimmedReason = String(reason || '').trim();
+  if (!trimmedReason || trimmedReason.length < 10) {
+    throw ApiError.validationError([
+      { field: 'reason', message: 'Please provide a reason (at least 10 characters).' },
+    ]);
+  }
+
+  // Verify enrollment belongs to this student
+  const enrollment = await prisma.enrollment.findFirst({
+    where: { id: enrollmentId, userId: studentId },
+    include: {
+      trainerAssignments: {
+        where: { active: true },
+        take: 1,
+      },
+    },
+  });
+
+  if (!enrollment) {
+    throw ApiError.notFound('Enrollment not found or does not belong to you.');
+  }
+
+  // Check for existing pending request
+  const existing = await prisma.trainerChangeRequest.findFirst({
+    where: { studentId, enrollmentId, status: 'PENDING' },
+  });
+
+  if (existing) {
+    throw ApiError.conflict(
+      'DUPLICATE_REQUEST',
+      'You already have a pending trainer change request for this enrollment.',
+    );
+  }
+
+  const currentTrainerId = enrollment.trainerAssignments?.[0]?.trainerId || null;
+
+  const changeRequest = await prisma.trainerChangeRequest.create({
+    data: {
+      studentId,
+      enrollmentId,
+      currentTrainerId,
+      reason: trimmedReason,
+      mobile: mobile ? String(mobile).trim() : null,
+      status: 'PENDING',
+    },
+  });
+
+  ok(res, {
+    _id: changeRequest.id,
+    status: changeRequest.status,
+    message: 'Your request to change trainer has been submitted successfully.',
+  });
+});
 
 function planRef(plan) {
   if (!plan) return null;
@@ -658,6 +725,39 @@ const createPaymentOrder = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Safe, non-blocking notification to all active admins when a student enrollment becomes active.
+ */
+async function notifyAdminsNewEnrollment({
+  enrollmentId,
+  studentId,
+  studentName,
+  studentEmail,
+  domainName,
+  projectTitle,
+}) {
+  try {
+    const label = studentName || studentEmail || 'A new student';
+    const scope = [domainName, projectTitle].filter(Boolean).join(' — ');
+    await notifyAdmins({
+      type: 'NEW_STUDENT_ENROLLED',
+      title: 'New Student Enrolled — Assign Trainer',
+      message: scope
+        ? `${label} enrolled in ${scope}. Please assign a trainer.`
+        : `${label} enrolled in an internship. Please assign a trainer.`,
+      link: '/admin/users',
+      metadata: {
+        enrollmentId,
+        studentId,
+        domainName: domainName || null,
+        projectTitle: projectTitle || null,
+      },
+    });
+  } catch (err) {
+    logger.warn(`[Enrollment] Admin notification failed for enrollment ${enrollmentId}: ${err.message}`);
+  }
+}
+
 async function activateEnrollmentEngine(enrollmentId) {
   const enrollment = await prisma.enrollment.findUnique({
     where: { id: enrollmentId },
@@ -693,6 +793,13 @@ async function activateEnrollmentEngine(enrollmentId) {
       scheduleTemplateId: template ? template.id : enrollment.scheduleTemplateId,
       scheduleVersion: template ? template.version : enrollment.scheduleVersion,
     },
+  });
+
+  await notifyAdminsNewEnrollment({
+    enrollmentId: updatedEnrollment.id,
+    studentId: enrollment.userId,
+    studentName: enrollment.user?.name,
+    studentEmail: enrollment.user?.email,
   });
 
   // For team enrollments, only activate the team and seed shared tasks once readiness is met
@@ -1075,6 +1182,9 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
           internshipId,
           companyName,
           domainName: domain?.name || domainName,
+          projectId: project?.id || projectId,
+          projectTitle: project?.title || projectTitle,
+          projectSlug: project?.slug,
           durationMonths: durMonths,
         })
       : null;
@@ -1143,6 +1253,26 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     logger.warn(`[TPO] Failed to record earning for demo payment ${payment.id}: ${err.message}`);
   }
 
+  // 10. Sync assigned project tasks & notify admins
+  if (project) {
+    try {
+      await syncProjectTasksToEnrollment(enrollment.id, project, {
+        actorId: user.id,
+        track: enrollment.track,
+      });
+    } catch (err) {
+      logger.warn(`[DemoCheckout] Failed to sync tasks for enrollment ${enrollment.id}: ${err.message}`);
+    }
+  }
+
+  await notifyAdminsNewEnrollment({
+    enrollmentId: enrollment.id,
+    studentId: user.id,
+    studentName: user.name,
+    studentEmail: user.email,
+    domainName: domain?.name,
+    projectTitle: project?.title,
+  });
   created(res, {
     success: true,
     enrollmentId: enrollment.id,
@@ -1176,4 +1306,5 @@ module.exports = {
   completeDemoCheckout,
   handlePaymentWebhook,
   activateEnrollmentEngine,
+  submitChangeTrainerRequest,
 };

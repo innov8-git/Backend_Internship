@@ -12,10 +12,14 @@ describe('Integration: OTP Authentication API Endpoints', () => {
   const testRawOtp = '839201';
 
   afterAll(async () => {
-    // Clean up test OTP tokens
-    await prisma.otpToken.deleteMany({
-      where: { email: testStudentEmail },
-    });
+    try {
+      // Clean up test OTP tokens
+      await prisma.otpToken.deleteMany({
+        where: { email: testStudentEmail },
+      });
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 
   describe('Validation Guardrails', () => {

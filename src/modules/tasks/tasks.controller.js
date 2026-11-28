@@ -23,10 +23,7 @@ const {
   createNotification,
   notifyAdmins,
 } = require('../notifications/services/notifications.service');
-const {
-  unlockDependents,
-  checkCertificateEligibility,
-} = require('../trainer/trainer.controller');
+const { syncProjectTasksToEnrollment } = require('../admin/services/project-task-sync.service');
 const logger = require('../../libs/logger');
 
 const SUBMISSION_RULES = {
@@ -265,6 +262,7 @@ const listEnrollmentTasks = asyncHandler(async (req, res) => {
   const enrollment = await prisma.enrollment.findUnique({
     where: { id },
     include: {
+      project: true,
       team: { include: { members: true } },
       payments: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
@@ -295,11 +293,28 @@ const listEnrollmentTasks = asyncHandler(async (req, res) => {
     ? { teamId: enrollment.teamId }
     : { enrollmentId: enrollment.id };
 
-  const allScopeItems = await prisma.taskProgress.findMany({
+  let allScopeItems = await prisma.taskProgress.findMany({
     where,
     include: { task: true },
     orderBy: { task: { sequence: 'asc' } },
   });
+
+  // Backfill tasks automatically if an active enrollment already has a project assigned but 0 TaskProgress rows
+  if (allScopeItems.length === 0 && enrollment.projectId && enrollment.project) {
+    try {
+      await syncProjectTasksToEnrollment(enrollment.id, enrollment.project, {
+        actorId: req.user.id,
+        track: enrollment.track,
+      });
+      allScopeItems = await prisma.taskProgress.findMany({
+        where,
+        include: { task: true },
+        orderBy: { task: { sequence: 'asc' } },
+      });
+    } catch (err) {
+      logger.warn(`[Tasks] Lazy task sync failed for enrollment ${enrollment.id}: ${err.message}`);
+    }
+  }
 
   const total = allScopeItems.length;
   const paged = allScopeItems.slice(skip, skip + limit);
@@ -484,7 +499,6 @@ const submitTask = asyncHandler(async (req, res) => {
   }
 
   const attemptNumber = (progress.attempts || 0) + 1;
-  const requiresReview = progress.task?.requiresTrainerReview !== false;
   const now = new Date();
 
   const [submission] = await prisma.$transaction([
@@ -497,7 +511,7 @@ const submitTask = asyncHandler(async (req, res) => {
         githubUrl,
         screenshots,
         submittedById: req.user.id,
-        reviewStatus: requiresReview ? REVIEW_STATUS.PENDING : REVIEW_STATUS.APPROVED,
+        reviewStatus: REVIEW_STATUS.PENDING,
       },
       include: {
         submittedBy: { select: { id: true, name: true } },
@@ -506,28 +520,15 @@ const submitTask = asyncHandler(async (req, res) => {
     prisma.taskProgress.update({
       where: { id: progress.id },
       data: {
-        status: requiresReview ? TASK_STATUS.SUBMITTED : TASK_STATUS.APPROVED,
+        status: TASK_STATUS.SUBMITTED,
         submittedAt: now,
-        approvedAt: requiresReview ? undefined : now,
         attempts: attemptNumber,
-        lastReviewStatus: requiresReview ? REVIEW_STATUS.PENDING : REVIEW_STATUS.APPROVED,
+        lastReviewStatus: REVIEW_STATUS.PENDING,
       },
     }),
   ]);
 
   await markEnrollmentInProgress(progress, enrollment);
-
-  if (!requiresReview) {
-    // Auto-approved self-check task: unlock dependent tasks and check certificate eligibility
-    await unlockDependents(progress.enrollmentId, progress.teamId);
-    await checkCertificateEligibility(progress.enrollmentId, progress.teamId);
-
-    return created(res, {
-      ...submissionDto(submission),
-      autoApproved: true,
-      assignedTrainer: null,
-    });
-  }
 
   // Notify assigned trainer, or alert admins if no trainer is currently assigned
   const assignedTrainer = await findActiveTrainerForProgress(progress, enrollment);
