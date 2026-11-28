@@ -25,6 +25,7 @@ const { notifyAdmins } = require('../notifications/services/notifications.servic
 const { syncProjectTasksToEnrollment } = require('../admin/services/project-task-sync.service');
 const { normalizeReferralCode } = require('../admin/services/tpo-code.util');
 const { InternshipsService } = require('../internships/services/internships.service');
+const { InternshipsModel } = require('../internships/internships.model');
 const logger = require('../../libs/logger');
 
 const QUOTE_TTL_HOURS = 24;
@@ -200,6 +201,22 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
   if (!enrollment) return null;
 
   const mentor = buildMentorDto(enrollment);
+  const formattedPlan = planRef(plan);
+  const snapshotDesignation =
+    enrollment.priceSnapshot?.designationName || enrollment.priceSnapshot?.roleName;
+  if (snapshotDesignation && formattedPlan) {
+    if (!formattedPlan.designation) {
+      formattedPlan.designation = { _id: null, name: snapshotDesignation, slug: '' };
+    } else if (
+      formattedPlan.designation.name &&
+      formattedPlan.designation.name.toLowerCase() !== snapshotDesignation.toLowerCase()
+    ) {
+      formattedPlan.designation = {
+        ...formattedPlan.designation,
+        name: snapshotDesignation,
+      };
+    }
+  }
 
   return {
     _id: enrollment.id,
@@ -207,7 +224,7 @@ function enrollmentDto(enrollment, latestPayment, team, plan, progressCount, cer
     teamId: enrollment.teamId || null,
     team: team ? { _id: team.id, name: team.name } : null,
     planId: enrollment.planId,
-    plan: planRef(plan),
+    plan: formattedPlan,
     quoteId: enrollment.quoteId || null,
     mentor,
     assignedTrainer: mentor,
@@ -987,6 +1004,7 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     referralCode,
     internshipId,
     companyName,
+    designationName,
   } = req.body;
 
   if (!email || !String(email).trim()) {
@@ -1093,14 +1111,83 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     durMonths = matched ? parseInt(matched[0], 10) : 3;
   }
 
-  // 4. Resolve Plan
+  // 4. Resolve Designation name from partner position or request body
+  let resolvedDesignationName = designationName || null;
+  if (!resolvedDesignationName && internshipId) {
+    const pos = InternshipsModel.findPositionById(internshipId);
+    if (pos?.role?.designation) {
+      resolvedDesignationName = pos.role.designation;
+    }
+  }
+
+  // 5. Resolve Plan — filter by designation + domain + duration
   let plan = null;
-  if (domain) {
+  let designation = null;
+  let cleanDesigName = null;
+
+  if (resolvedDesignationName) {
+    // Strip track suffix like " – Web Development" to match DB designation name
+    cleanDesigName = String(resolvedDesignationName)
+      .replace(/\s*[–-]\s*(Web|App)\s*Development\s*$/i, '')
+      .trim();
+
+    designation = await prisma.designation.findFirst({
+      where: {
+        OR: [
+          { name: { equals: cleanDesigName, mode: 'insensitive' } },
+          { name: { equals: String(resolvedDesignationName).trim(), mode: 'insensitive' } },
+          { slug: { equals: cleanDesigName.toLowerCase().replace(/\s+/g, '-'), mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    if (!designation && cleanDesigName) {
+      const desigSlug = cleanDesigName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+      designation = await prisma.designation.create({
+        data: {
+          name: cleanDesigName,
+          slug: desigSlug || `role-${Date.now()}`,
+          description: `${cleanDesigName} Role`,
+          status: 'PUBLISHED',
+        },
+      });
+    }
+  }
+
+  if (designation && domain) {
     plan = await prisma.internshipPlan.findFirst({
       where: {
+        designationId: designation.id,
         domainId: domain.id,
         durationMonths: durMonths,
       },
+    });
+    if (!plan) {
+      // No plan exists for this designation + domain + duration — create one
+      // so the student gets the correct designation on their dashboard
+      const refPlan = await prisma.internshipPlan.findFirst({
+        where: { domainId: domain.id, durationMonths: durMonths },
+      });
+      plan = await prisma.internshipPlan.create({
+        data: {
+          designationId: designation.id,
+          domainId: domain.id,
+          durationMonths: durMonths,
+          basePrice: refPlan?.basePrice ?? (rawAmount ? Number(rawAmount) : 169900),
+          currency: refPlan?.currency ?? 'INR',
+          status: 'PUBLISHED',
+        },
+      });
+    }
+  }
+
+  // Fallback: no designation was resolved — pick any plan matching domain + duration (legacy behavior)
+  if (!plan && !designation && domain) {
+    plan = await prisma.internshipPlan.findFirst({
+      where: { domainId: domain.id, durationMonths: durMonths },
     });
     if (!plan) {
       plan = await prisma.internshipPlan.findFirst({
@@ -1108,12 +1195,14 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
       });
     }
   }
-  if (!plan) {
+  if (!plan && !designation) {
     plan = await prisma.internshipPlan.findFirst();
   }
 
   if (!plan && domain) {
-    let designation = await prisma.designation.findFirst();
+    if (!designation) {
+      designation = await prisma.designation.findFirst();
+    }
     if (!designation) {
       designation = await prisma.designation.create({
         data: {
@@ -1136,7 +1225,7 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     });
   }
 
-  // 5. Resolve Project
+  // 6. Resolve Project
   let project = null;
   if (projectId) {
     project = await prisma.project.findFirst({
@@ -1162,18 +1251,18 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     });
   }
 
-  // 6. Resolve Amount (paise) from partner internship pricing if available, fallback to rawAmount / default
+  // 7. Resolve Amount (paise) from partner internship pricing if available, fallback to rawAmount / default
   const resolvedQuote =
     internshipId || companyName
       ? InternshipsService.getQuote({
-          internshipId,
-          companyName,
-          domainName: domain?.name || domainName,
-          projectId: project?.id || projectId,
-          projectTitle: project?.title || projectTitle,
-          projectSlug: project?.slug,
-          durationMonths: durMonths,
-        })
+        internshipId,
+        companyName,
+        domainName: domain?.name || domainName,
+        projectId: project?.id || projectId,
+        projectTitle: project?.title || projectTitle,
+        projectSlug: project?.slug,
+        durationMonths: durMonths,
+      })
       : null;
   const amount =
     resolvedQuote && Number.isFinite(resolvedQuote.payablePaise)
@@ -1182,7 +1271,7 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
         ? Number(rawAmount)
         : 169900;
 
-  // 7. Create Enrollment
+  // 8. Create Enrollment
   const enrollment = await prisma.enrollment.create({
     data: {
       userId: user.id,
@@ -1198,12 +1287,15 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
         currency: 'INR',
         discount: 0,
         payableAmount: amount,
+        designationName: cleanDesigName || resolvedDesignationName || designation?.name || null,
+        companyName: companyName || null,
+        internshipId: internshipId || null,
         ...(referredTpo ? { referralCode: referredTpo.referralCode, tpoId: referredTpo.id } : {}),
       },
     },
   });
 
-  // 8. Create Payment
+  // 9. Create Payment
   const orderId = `DEMO-TXN-${Math.floor(10000000 + Math.random() * 90000000)}`;
   const payment = await prisma.payment.create({
     data: {

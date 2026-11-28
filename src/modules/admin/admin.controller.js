@@ -644,7 +644,14 @@ const listAdminEnrollments = asyncHandler(async (req, res) => {
         durationMonths: e.plan.durationMonths,
         basePrice: e.plan.basePrice,
         currency: e.plan.currency,
-        designation: e.plan.designation ? { _id: e.plan.designation.id, name: e.plan.designation.name } : null,
+        designation: e.plan.designation
+          ? {
+              _id: e.plan.designation.id,
+              name: e.priceSnapshot?.designationName || e.plan.designation.name,
+            }
+          : e.priceSnapshot?.designationName
+            ? { _id: null, name: e.priceSnapshot.designationName }
+            : null,
         domain: e.plan.domain ? { _id: e.plan.domain.id, name: e.plan.domain.name } : null,
       },
       status: e.status,
@@ -717,7 +724,14 @@ const getAdminEnrollmentById = asyncHandler(async (req, res) => {
       durationMonths: enrollment.plan.durationMonths,
       basePrice: enrollment.plan.basePrice,
       currency: enrollment.plan.currency,
-      designation: enrollment.plan.designation ? { _id: enrollment.plan.designation.id, name: enrollment.plan.designation.name } : null,
+      designation: enrollment.plan.designation
+        ? {
+            _id: enrollment.plan.designation.id,
+            name: enrollment.priceSnapshot?.designationName || enrollment.plan.designation.name,
+          }
+        : enrollment.priceSnapshot?.designationName
+          ? { _id: null, name: enrollment.priceSnapshot.designationName }
+          : null,
       domain: enrollment.plan.domain ? { _id: enrollment.plan.domain.id, name: enrollment.plan.domain.name } : null,
     },
     status: enrollment.status,
@@ -2337,7 +2351,14 @@ const listAdminSubmissions = asyncHandler(async (req, res) => {
         ? {
             _id: enrollment.plan.id,
             durationMonths: enrollment.plan.durationMonths,
-            designation: enrollment.plan.designation ? { _id: enrollment.plan.designation.id, name: enrollment.plan.designation.name } : null,
+            designation: enrollment.plan.designation
+        ? {
+            _id: enrollment.plan.designation.id,
+            name: enrollment.priceSnapshot?.designationName || enrollment.plan.designation.name,
+          }
+        : enrollment.priceSnapshot?.designationName
+          ? { _id: null, name: enrollment.priceSnapshot.designationName }
+          : null,
             domain: enrollment.plan.domain ? { _id: enrollment.plan.domain.id, name: enrollment.plan.domain.name } : null,
           }
         : null,

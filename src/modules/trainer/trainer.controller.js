@@ -46,16 +46,23 @@ function parseJsonArray(value) {
   return [];
 }
 
-function planRef(plan) {
+function planRef(plan, enrollment = null) {
   if (!plan) return null;
+  const snapshotDesig = enrollment?.priceSnapshot?.designationName || enrollment?.priceSnapshot?.roleName;
   return {
     _id: plan.id,
     durationMonths: plan.durationMonths,
     basePrice: plan.basePrice,
     currency: plan.currency || 'INR',
     designation: plan.designation
-      ? { _id: plan.designation.id, name: plan.designation.name, slug: plan.designation.slug }
-      : null,
+      ? {
+          _id: plan.designation.id,
+          name: snapshotDesig || plan.designation.name,
+          slug: plan.designation.slug,
+        }
+      : snapshotDesig
+        ? { _id: null, name: snapshotDesig, slug: '' }
+        : null,
     domain: plan.domain
       ? { _id: plan.domain.id, name: plan.domain.name, slug: plan.domain.slug }
       : null,
@@ -615,7 +622,7 @@ async function buildTrainerAssignmentsReport(trainerId, search = null) {
           email: e.user.email,
         },
         team: null,
-        plan: planRef(e.plan),
+        plan: planRef(e.plan, e),
         project: projectRef(e.project),
         track: e.track || 'web',
         approvedTasks,
@@ -783,7 +790,7 @@ const getTrainerSubmissions = asyncHandler(async (req, res) => {
       team: enrollment?.team
         ? { _id: enrollment.team.id, name: enrollment.team.name }
         : null,
-      plan: planRef(enrollment?.plan),
+      plan: planRef(enrollment?.plan, enrollment),
       project: projectRef(enrollment?.project),
     };
   });
@@ -901,7 +908,7 @@ const getTrainerSubmissionById = asyncHandler(async (req, res) => {
     team: enrollment?.team
       ? { _id: enrollment.team.id, name: enrollment.team.name, repoUrl: enrollment.team.repoUrl }
       : null,
-    plan: planRef(enrollment?.plan),
+    plan: planRef(enrollment?.plan, enrollment),
     project: projectRef(enrollment?.project),
     track: enrollment?.track || 'web',
     previousAttempts,
