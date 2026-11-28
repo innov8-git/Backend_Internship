@@ -23,6 +23,7 @@ const {
   createNotification,
   notifyAdmins,
 } = require('../notifications/services/notifications.service');
+const { syncProjectTasksToEnrollment } = require('../admin/services/project-task-sync.service');
 const logger = require('../../libs/logger');
 
 const SUBMISSION_RULES = {
@@ -261,6 +262,7 @@ const listEnrollmentTasks = asyncHandler(async (req, res) => {
   const enrollment = await prisma.enrollment.findUnique({
     where: { id },
     include: {
+      project: true,
       team: { include: { members: true } },
       payments: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
@@ -291,11 +293,28 @@ const listEnrollmentTasks = asyncHandler(async (req, res) => {
     ? { teamId: enrollment.teamId }
     : { enrollmentId: enrollment.id };
 
-  const allScopeItems = await prisma.taskProgress.findMany({
+  let allScopeItems = await prisma.taskProgress.findMany({
     where,
     include: { task: true },
     orderBy: { task: { sequence: 'asc' } },
   });
+
+  // Backfill tasks automatically if an active enrollment already has a project assigned but 0 TaskProgress rows
+  if (allScopeItems.length === 0 && enrollment.projectId && enrollment.project) {
+    try {
+      await syncProjectTasksToEnrollment(enrollment.id, enrollment.project, {
+        actorId: req.user.id,
+        track: enrollment.track,
+      });
+      allScopeItems = await prisma.taskProgress.findMany({
+        where,
+        include: { task: true },
+        orderBy: { task: { sequence: 'asc' } },
+      });
+    } catch (err) {
+      logger.warn(`[Tasks] Lazy task sync failed for enrollment ${enrollment.id}: ${err.message}`);
+    }
+  }
 
   const total = allScopeItems.length;
   const paged = allScopeItems.slice(skip, skip + limit);
