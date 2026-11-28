@@ -18,6 +18,8 @@ const {
 const {
   createTpoSchema,
   updateTpoSchema,
+  provisionTpoPortalSchema,
+  recordTpoPayoutSchema,
 } = require('./dto/admin-tpo.dto');
 const {
   acceptTrainerApplicationSchema,
@@ -81,6 +83,7 @@ router.get('/users', adminController.listUsers);
 router.patch('/users/:id/roles', adminController.updateUserRoles);
 router.patch('/users/:id/status', adminController.updateUserStatus);
 router.patch('/users/:id/trainer', adminController.updateStudentTrainer);
+router.delete('/users/:id', adminController.deleteUser);
 
 
 // ─── Enrollments Monitoring ──────────────────────────────────────────────────
@@ -139,12 +142,23 @@ router.delete('/trainer-applications/:id', trainerApplicationsController.deleteT
 router.get('/trainer-change-requests', adminChangeRequestsController.listTrainerChangeRequests);
 router.patch('/trainer-change-requests/:id', adminChangeRequestsController.resolveTrainerChangeRequest);
 
-// ─── TPOs (Referral Codes & Student Attribution) ─────────────────────────────
+// ─── TPOs (Referral Codes, Earnings, Payouts & Private Portal Access) ────────
 router.get('/tpos', adminTpoController.listAdminTpos);
 router.post('/tpos', validate(createTpoSchema), adminTpoController.createAdminTpo);
 router.get('/tpos/:id', adminTpoController.getAdminTpoById);
 router.patch('/tpos/:id', validate(updateTpoSchema), adminTpoController.updateAdminTpo);
+router.post(
+  '/tpos/:id/portal-access',
+  validate(provisionTpoPortalSchema),
+  adminTpoController.provisionOrResetTpoPortalAccess,
+);
 router.delete('/tpos/:id', adminTpoController.deleteAdminTpo);
 router.get('/tpos/:id/referrals', adminTpoController.listTpoReferrals);
+router.get('/tpos/:id/earnings', adminTpoController.getAdminTpoEarnings);
+router.post(
+  '/tpos/:id/payouts',
+  validate(recordTpoPayoutSchema),
+  adminTpoController.recordAdminTpoPayout,
+);
 
 module.exports = router;

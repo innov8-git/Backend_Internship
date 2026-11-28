@@ -24,6 +24,7 @@ const { computeTeamReadiness } = require('../teams/teams.controller');
 const { notifyAdmins } = require('../notifications/services/notifications.service');
 const { syncProjectTasksToEnrollment } = require('../admin/services/project-task-sync.service');
 const { normalizeReferralCode } = require('../admin/services/tpo-code.util');
+const { recordTpoEarningForPayment } = require('../tpo/services/tpo-earnings.service');
 const { InternshipsService } = require('../internships/services/internships.service');
 const { InternshipsModel } = require('../internships/internships.model');
 const logger = require('../../libs/logger');
@@ -985,6 +986,18 @@ const completeMockPayment = asyncHandler(async (req, res) => {
 
   await activateEnrollmentEngine(payment.enrollmentId);
 
+  try {
+    await recordTpoEarningForPayment(prisma, {
+      enrollmentId: payment.enrollmentId,
+      paymentId: payment.id,
+      studentId: payment.userId,
+      paymentAmountPaise: payment.amount,
+      currency: payment.currency || 'INR',
+    });
+  } catch (err) {
+    logger.warn(`[TPO] Failed to record earning for payment ${payment.id}: ${err.message}`);
+  }
+
   ok(res, { status: PAYMENT_STATUS.SUCCESS });
 });
 
@@ -1076,7 +1089,7 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     if (cleanName && (!user.name || user.name === user.email)) updateData.name = cleanName;
     if (phone && !user.phone) updateData.phone = String(phone).trim();
     if (college && !user.college) updateData.college = String(college).trim();
-    if (referredTpo) {
+    if (referredTpo && !user.referredByTpoId) {
       updateData.referredByTpoId = referredTpo.id;
       updateData.referralCodeUsed = referredTpo.referralCode;
     }
@@ -1317,6 +1330,22 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     },
   });
 
+  // 9. Idempotently credit TPO earning ledger if referred (never exposed to student response)
+  try {
+    await recordTpoEarningForPayment(prisma, {
+      enrollmentId: enrollment.id,
+      paymentId: payment.id,
+      studentId: user.id,
+      paymentAmountPaise: payment.amount,
+      currency: payment.currency || 'INR',
+      explicitTpoId: referredTpo?.id || user.referredByTpoId || null,
+      explicitReferralCode: referredTpo?.referralCode || user.referralCodeUsed || null,
+    });
+  } catch (err) {
+    logger.warn(`[TPO] Failed to record earning for demo payment ${payment.id}: ${err.message}`);
+  }
+
+  // 10. Sync assigned project tasks & notify admins
   if (project) {
     try {
       await syncProjectTasksToEnrollment(enrollment.id, project, {
@@ -1336,7 +1365,6 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
     domainName: domain?.name,
     projectTitle: project?.title,
   });
-
   created(res, {
     success: true,
     enrollmentId: enrollment.id,

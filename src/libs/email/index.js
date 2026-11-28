@@ -4,6 +4,7 @@ const logger = require('../logger');
 const { prisma } = require('../../database');
 const { getOtpEmailTemplate } = require('./templates/otp.template');
 const { getWelcomeTrainerEmailTemplate } = require('./templates/welcome-trainer.template');
+const { getWelcomeTpoEmailTemplate } = require('./templates/welcome-tpo.template');
 
 let transporter = null;
 
@@ -169,6 +170,27 @@ async function sendTrainerWelcomeEmail({ to, name, email, password, loginUrl }) 
   });
 }
 
+async function sendTpoWelcomeEmail({ to, name, college, referralCode, email, password, loginUrl }) {
+  const resolvedLoginUrl = loginUrl || `${config.clientUrl || 'http://localhost:5173'}/login`;
+  const { subject, html } = getWelcomeTpoEmailTemplate({
+    name,
+    college,
+    referralCode,
+    email,
+    password,
+    loginUrl: resolvedLoginUrl,
+  });
+
+  return sendEmail({
+    to,
+    subject,
+    html,
+    template: 'welcome-tpo',
+    link: resolvedLoginUrl,
+    payload: { name, email, referralCode },
+  });
+}
+
 async function sendPaymentSuccessEmail(to, name, enrollmentId, amountFormatted) {
   const dashboardUrl = `${config.clientUrl || 'http://localhost:5173'}/dashboard`;
   const html = `
@@ -288,6 +310,7 @@ module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendTrainerWelcomeEmail,
+  sendTpoWelcomeEmail,
   sendPaymentSuccessEmail,
   sendCertificateIssuedEmail,
   sendTeamInviteEmail,

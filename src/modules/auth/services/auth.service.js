@@ -176,6 +176,7 @@ class AuthService {
       where: { email: email.toLowerCase() },
       include: {
         trainerProfile: true,
+        tpoProfile: { select: { id: true, portalEnabled: true } },
         userRoles: {
           include: {
             role: {
@@ -217,6 +218,15 @@ class AuthService {
           if (rp.permission?.code) permissionSet.add(rp.permission.code);
         }
       }
+    }
+
+    // Block login for TPO-only accounts whose portal access was disabled by Admin
+    const isTpoOnly = roles.length === 1 && roles[0] === 'TPO';
+    if (isTpoOnly && (!user.tpoProfile || !user.tpoProfile.portalEnabled)) {
+      throw ApiError.forbidden(
+        'TPO_PORTAL_DISABLED',
+        'Your TPO partner access is currently disabled. Please contact the administrator.',
+      );
     }
 
     const { accessToken, rawRefreshToken } = await tokenService.createSession(
@@ -374,6 +384,7 @@ class AuthService {
       where: { id: userId },
       include: {
         trainerProfile: true,
+        tpoProfile: { select: { id: true, portalEnabled: true } },
         userRoles: {
           include: {
             role: {
