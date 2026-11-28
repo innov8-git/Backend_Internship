@@ -22,6 +22,7 @@ const {
 const { sendPaymentSuccessEmail } = require('../../libs/email');
 const { computeTeamReadiness } = require('../teams/teams.controller');
 const { notifyAdmins } = require('../notifications/services/notifications.service');
+const { syncProjectTasksToEnrollment } = require('../admin/services/project-task-sync.service');
 const { normalizeReferralCode } = require('../admin/services/tpo-code.util');
 const { InternshipsService } = require('../internships/services/internships.service');
 const logger = require('../../libs/logger');
@@ -723,6 +724,39 @@ const createPaymentOrder = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Safe, non-blocking notification to all active admins when a student enrollment becomes active.
+ */
+async function notifyAdminsNewEnrollment({
+  enrollmentId,
+  studentId,
+  studentName,
+  studentEmail,
+  domainName,
+  projectTitle,
+}) {
+  try {
+    const label = studentName || studentEmail || 'A new student';
+    const scope = [domainName, projectTitle].filter(Boolean).join(' — ');
+    await notifyAdmins({
+      type: 'NEW_STUDENT_ENROLLED',
+      title: 'New Student Enrolled — Assign Trainer',
+      message: scope
+        ? `${label} enrolled in ${scope}. Please assign a trainer.`
+        : `${label} enrolled in an internship. Please assign a trainer.`,
+      link: '/admin/users',
+      metadata: {
+        enrollmentId,
+        studentId,
+        domainName: domainName || null,
+        projectTitle: projectTitle || null,
+      },
+    });
+  } catch (err) {
+    logger.warn(`[Enrollment] Admin notification failed for enrollment ${enrollmentId}: ${err.message}`);
+  }
+}
+
 async function activateEnrollmentEngine(enrollmentId) {
   const enrollment = await prisma.enrollment.findUnique({
     where: { id: enrollmentId },
@@ -758,6 +792,13 @@ async function activateEnrollmentEngine(enrollmentId) {
       scheduleTemplateId: template ? template.id : enrollment.scheduleTemplateId,
       scheduleVersion: template ? template.version : enrollment.scheduleVersion,
     },
+  });
+
+  await notifyAdminsNewEnrollment({
+    enrollmentId: updatedEnrollment.id,
+    studentId: enrollment.userId,
+    studentName: enrollment.user?.name,
+    studentEmail: enrollment.user?.email,
   });
 
   // For team enrollments, only activate the team and seed shared tasks once readiness is met
@@ -1182,6 +1223,26 @@ const completeDemoCheckout = asyncHandler(async (req, res) => {
         },
       },
     },
+  });
+
+  if (project) {
+    try {
+      await syncProjectTasksToEnrollment(enrollment.id, project, {
+        actorId: user.id,
+        track: enrollment.track,
+      });
+    } catch (err) {
+      logger.warn(`[DemoCheckout] Failed to sync tasks for enrollment ${enrollment.id}: ${err.message}`);
+    }
+  }
+
+  await notifyAdminsNewEnrollment({
+    enrollmentId: enrollment.id,
+    studentId: user.id,
+    studentName: user.name,
+    studentEmail: user.email,
+    domainName: domain?.name,
+    projectTitle: project?.title,
   });
 
   created(res, {
